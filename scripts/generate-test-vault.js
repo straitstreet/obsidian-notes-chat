@@ -132,7 +132,7 @@ interface ${title.replace(/ /g, '')}Config {
         return `# Daily Note - ${date}
 
 ## Today's Focus
-- Working on LLM Knowledge Base plugin
+- Working on MindBridge plugin
 - Testing provider integrations
 - Reviewing documentation
 
@@ -144,7 +144,7 @@ interface ${title.replace(/ /g, '')}Config {
 
 ## Notes
 ### Meeting Notes
-- Discussed plugin architecture
+- Discussed MindBridge architecture
 - Reviewed API integration patterns
 - Planned testing strategy
 
@@ -166,7 +166,7 @@ const response = await llmProvider.generateResponse(
 Partly cloudy, 72°F
 
 ## Reflection
-Good progress on the plugin architecture. Need to focus more on testing tomorrow.
+Good progress on the MindBridge plugin architecture. Need to focus more on testing tomorrow.
 
 ## Tomorrow
 - [ ] Implement knowledge graph indexing
@@ -174,7 +174,7 @@ Good progress on the plugin architecture. Need to focus more on testing tomorrow
 - [ ] Write comprehensive tests
 
 ## Tags
-#daily #${date} #development
+#daily #${date} #development #mindbridge
 `;
     }
 
@@ -234,7 +234,7 @@ This template can be used for ${title.toLowerCase()}.
         // Generate index file
         const indexContent = `# Test Vault
 
-This is a test vault for the LLM Knowledge Base plugin.
+This is a test vault for the MindBridge plugin.
 
 ## Structure
 - **Projects/**: Active project documentation
@@ -249,7 +249,7 @@ This vault contains sample content for testing:
 - LLM query context
 - Budget tracking scenarios
 
-## Plugin Testing
+## MindBridge Testing
 Use this vault to test:
 - Hotkey functionality
 - LLM provider integrations
@@ -258,7 +258,7 @@ Use this vault to test:
 
 Generated: ${new Date().toISOString()}
 
-#index #test-vault
+#index #test-vault #mindbridge
 `;
 
         await fs.writeFile(path.join(this.vaultPath, 'README.md'), indexContent, 'utf-8');
@@ -266,7 +266,7 @@ Generated: ${new Date().toISOString()}
         // Generate .obsidian config for the test vault
         const obsidianConfig = {
             plugins: {
-                'straitstreet-llm-kb': {
+                'obsidian-mindbridge': {
                     enabled: true,
                     settings: {
                         providers: {
@@ -289,7 +289,7 @@ Generated: ${new Date().toISOString()}
         await this.ensureDir(path.join(this.vaultPath, '.obsidian'));
         await fs.writeFile(
             path.join(this.vaultPath, '.obsidian', 'community-plugins.json'),
-            JSON.stringify(['straitstreet-llm-kb'], null, 2),
+            JSON.stringify(['obsidian-mindbridge'], null, 2),
             'utf-8'
         );
 

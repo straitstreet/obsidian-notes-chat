@@ -1,11 +1,11 @@
 {
-	"id": "straitstreet-llm-kb",
-	"name": "LLM Knowledge Base",
+	"id": "obsidian-notes-chat",
+	"name": "Chat with Notes",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Hotkey-driven LLM interface with local knowledge graph and budget tracking",
+	"description": "Chat with your notes using AI - supports multiple LLM providers with budget tracking",
 	"author": "StraitStreet",
 	"authorUrl": "https://github.com/straitstreet",
-	"fundingUrl": "https://github.com/straitstreet/straitstreet-llm-kb",
+	"fundingUrl": "https://github.com/straitstreet/obsidian-notes-chat",
 	"isDesktopOnly": false
 }

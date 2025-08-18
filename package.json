@@ -1,7 +1,7 @@
 {
-  "name": "straitstreet-llm-kb",
+  "name": "obsidian-notes-chat",
   "version": "1.0.0",
-  "description": "Obsidian plugin for hotkey-driven LLM interface with local knowledge graph and budget tracking",
+  "description": "Chat with your notes using AI - supports multiple LLM providers with budget tracking",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -9,6 +9,10 @@
     "version": "node version-bump.mjs && git add manifest.json versions.json",
     "load-docs": "node scripts/load-obsidian-docs.js",
     "generate-vault": "node scripts/generate-test-vault.js",
+    "package": "npm run build && npm run package:zip",
+    "package:zip": "node scripts/package-plugin.js",
+    "release": "npm run test:ci && npm run build && npm run package",
+    "deploy": "npm run release && node scripts/deploy-plugin.js",
     "test": "jest",
     "test:unit": "jest --testMatch='**/tests/unit/**/*.test.js'",
     "test:integration": "jest --testMatch='**/tests/integration/**/*.test.js'",
@@ -16,7 +20,7 @@
     "test:obsidian": "echo 'Run this in Obsidian dev environment'",
     "test:ci": "jest --ci --coverage --watchAll=false"
   },
-  "keywords": ["obsidian", "plugin", "llm", "knowledge-graph", "hotkey", "budget-tracking"],
+  "keywords": ["obsidian", "plugin", "llm", "ai", "chat", "notes", "knowledge-graph", "hotkey", "budget-tracking", "conversation"],
   "author": "StraitStreet",
   "license": "MIT",
   "devDependencies": {
@@ -24,6 +28,7 @@
     "@types/jest": "^29.5.0",
     "@typescript-eslint/eslint-plugin": "5.29.0",
     "@typescript-eslint/parser": "5.29.0",
+    "archiver": "^6.0.0",
     "builtin-modules": "3.3.0",
     "esbuild": "0.17.3",
     "jest": "^29.5.0",
@@ -37,7 +42,7 @@
     "@ai-sdk/openai": "^0.0.66",
     "@ai-sdk/anthropic": "^0.0.54",
     "@ai-sdk/google": "^0.0.52",
-    "ollama-ai-provider": "^0.17.1",
+    "ollama-ai-provider": "^1.2.0",
     "chroma-js": "^2.4.2",
     "@xenova/transformers": "^2.6.0",
     "cheerio": "^1.0.0",

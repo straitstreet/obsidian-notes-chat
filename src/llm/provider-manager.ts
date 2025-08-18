@@ -1,4 +1,4 @@
-import { generateText, generateObject, streamText } from 'ai';
+import { generateText, streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { google } from '@ai-sdk/google';
@@ -63,10 +63,7 @@ export class LLMProviderManager {
                 enabled: true
             });
 
-            this.aiProviders.set('openai', openai({
-                apiKey: this.config.openai.apiKey,
-                baseURL: this.config.openai.baseUrl
-            }));
+            this.aiProviders.set('openai', openai);
         }
 
         // Anthropic
@@ -86,10 +83,7 @@ export class LLMProviderManager {
                 enabled: true
             });
 
-            this.aiProviders.set('anthropic', anthropic({
-                apiKey: this.config.anthropic.apiKey,
-                baseURL: this.config.anthropic.baseUrl
-            }));
+            this.aiProviders.set('anthropic', anthropic);
         }
 
         // Google
@@ -111,10 +105,7 @@ export class LLMProviderManager {
                 enabled: true
             });
 
-            this.aiProviders.set('google', google({
-                apiKey: this.config.google.apiKey,
-                baseURL: this.config.google.baseUrl
-            }));
+            this.aiProviders.set('google', google);
         }
 
         // Ollama (Local)
@@ -204,8 +195,21 @@ export class LLMProviderManager {
         }
 
         try {
+            // Configure the provider with settings
+            const providerConfig = this.config[provider];
+            const configuredProvider = provider === 'openai' ? aiProvider({
+                apiKey: providerConfig?.apiKey,
+                ...(providerConfig?.baseUrl && { baseURL: providerConfig.baseUrl })
+            }) : provider === 'anthropic' ? aiProvider({
+                apiKey: providerConfig?.apiKey,
+                ...(providerConfig?.baseUrl && { baseURL: providerConfig.baseUrl })
+            }) : provider === 'google' ? aiProvider({
+                apiKey: providerConfig?.apiKey,
+                ...(providerConfig?.baseUrl && { baseURL: providerConfig.baseUrl })
+            }) : aiProvider;
+
             const result = await generateText({
-                model: aiProvider(model),
+                model: configuredProvider(model),
                 messages: messages as any,
                 maxTokens: options.maxTokens || 1000,
                 temperature: options.temperature || 0.7,
