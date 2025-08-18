@@ -1,0 +1,47 @@
+{
+  "name": "straitstreet-llm-kb",
+  "version": "1.0.0",
+  "description": "Obsidian plugin for hotkey-driven LLM interface with local knowledge graph and budget tracking",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "version": "node version-bump.mjs && git add manifest.json versions.json",
+    "load-docs": "node scripts/load-obsidian-docs.js",
+    "generate-vault": "node scripts/generate-test-vault.js",
+    "test": "jest",
+    "test:unit": "jest --testMatch='**/tests/unit/**/*.test.js'",
+    "test:integration": "jest --testMatch='**/tests/integration/**/*.test.js'",
+    "test:standalone": "node tests/standalone-test.js",
+    "test:obsidian": "echo 'Run this in Obsidian dev environment'",
+    "test:ci": "jest --ci --coverage --watchAll=false"
+  },
+  "keywords": ["obsidian", "plugin", "llm", "knowledge-graph", "hotkey", "budget-tracking"],
+  "author": "StraitStreet",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^16.11.6",
+    "@types/jest": "^29.5.0",
+    "@typescript-eslint/eslint-plugin": "5.29.0",
+    "@typescript-eslint/parser": "5.29.0",
+    "builtin-modules": "3.3.0",
+    "esbuild": "0.17.3",
+    "jest": "^29.5.0",
+    "jest-environment-node": "^29.5.0",
+    "obsidian": "latest",
+    "tslib": "2.4.0",
+    "typescript": "4.7.4"
+  },
+  "dependencies": {
+    "ai": "^3.0.0",
+    "@ai-sdk/openai": "^0.0.66",
+    "@ai-sdk/anthropic": "^0.0.54",
+    "@ai-sdk/google": "^0.0.52",
+    "ollama-ai-provider": "^0.17.1",
+    "chroma-js": "^2.4.2",
+    "@xenova/transformers": "^2.6.0",
+    "cheerio": "^1.0.0",
+    "axios": "^1.6.0",
+    "tiktoken": "^1.0.0"
+  }
+}

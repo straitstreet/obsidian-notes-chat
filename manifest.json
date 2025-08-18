@@ -1,0 +1,11 @@
+{
+	"id": "straitstreet-llm-kb",
+	"name": "LLM Knowledge Base",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Hotkey-driven LLM interface with local knowledge graph and budget tracking",
+	"author": "StraitStreet",
+	"authorUrl": "https://github.com/straitstreet",
+	"fundingUrl": "https://github.com/straitstreet/straitstreet-llm-kb",
+	"isDesktopOnly": false
+}
