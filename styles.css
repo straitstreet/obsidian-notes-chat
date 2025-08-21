@@ -541,3 +541,73 @@
 .modal .search-results::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-bg-hover);
 }
+
+/* Loading animations and indicators */
+.is-loading {
+    position: relative;
+    overflow: hidden;
+}
+
+.is-loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, 
+        transparent, 
+        rgba(var(--text-accent-rgb), 0.2), 
+        transparent);
+    animation: loading-shimmer 2s infinite;
+}
+
+@keyframes loading-shimmer {
+    0% {
+        left: -100%;
+    }
+    100% {
+        left: 100%;
+    }
+}
+
+/* Thinking message styling */
+.message-thinking {
+    align-self: flex-start;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    border-bottom-left-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    font-style: italic;
+    animation: thinking-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+    0%, 100% {
+        opacity: 0.6;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+/* Enhanced status indicators */
+.send-button.is-processing {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    cursor: wait;
+}
+
+.send-button.is-processing::before {
+    content: "⏳ ";
+    animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}

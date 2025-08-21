@@ -46,7 +46,10 @@ export class BudgetManager {
 
     private loadUsageHistory(): void {
         try {
-            const stored = (window as any).localStorage?.getItem(this.STORAGE_KEY);
+            const localStorage = this.getLocalStorage();
+            if (!localStorage) return;
+            
+            const stored = localStorage.getItem(this.STORAGE_KEY);
             if (stored) {
                 this.usageHistory = JSON.parse(stored);
             }
@@ -58,9 +61,20 @@ export class BudgetManager {
 
     private saveUsageHistory(): void {
         try {
-            (window as any).localStorage?.setItem(this.STORAGE_KEY, JSON.stringify(this.usageHistory));
+            const localStorage = this.getLocalStorage();
+            if (!localStorage) return;
+            
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.usageHistory));
         } catch (error) {
             console.error('Failed to save usage history:', error);
+        }
+    }
+
+    private getLocalStorage(): Storage | null {
+        try {
+            return typeof window !== 'undefined' && window.localStorage ? window.localStorage : (global as any).localStorage || null;
+        } catch {
+            return null;
         }
     }
 

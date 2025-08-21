@@ -9,9 +9,16 @@ const localStorageMock = {
     clear: jest.fn(() => { localStorageMock.store = {}; })
 };
 
+// Mock both global and window localStorage
 Object.defineProperty(global, 'localStorage', {
-    value: localStorageMock
+    value: localStorageMock,
+    writable: true
 });
+
+// Mock window object for getLocalStorage method
+global.window = {
+    localStorage: localStorageMock
+};
 
 describe('BudgetManager', () => {
     let budgetManager;
@@ -23,8 +30,15 @@ describe('BudgetManager', () => {
     };
 
     beforeEach(() => {
-        localStorageMock.clear();
-        budgetManager = new BudgetManager(mockConfig);
+        // Clear localStorage mock between tests
+        localStorageMock.store = {};
+        localStorageMock.getItem.mockClear();
+        localStorageMock.setItem.mockClear();
+        localStorageMock.removeItem.mockClear();
+        localStorageMock.clear.mockClear();
+        
+        // Create fresh instance
+        budgetManager = new BudgetManager({...mockConfig});
     });
 
     afterEach(() => {
@@ -266,7 +280,7 @@ describe('BudgetManager', () => {
             budgetManager.recordUsage(usage);
             
             const exportedData = budgetManager.exportUsageData();
-            expect(exportedData).toContain('"provider":"openai"');
+            expect(exportedData).toContain('"provider": "openai"'); // Account for pretty printing spaces
             
             budgetManager.clearHistory();
             expect(budgetManager.getCurrentMonthUsage()).toHaveLength(0);

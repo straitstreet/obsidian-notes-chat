@@ -54,7 +54,7 @@ export class ChatView extends ItemView {
         queryOptions: QueryOptions = {
             provider: 'ollama',
             model: 'llama3.2',
-            includeContext: false,
+            includeContext: true, // Enable context by default for better responses
             maxContextResults: 3,
             temperature: 0.7
         }
@@ -262,11 +262,55 @@ export class ChatView extends ItemView {
             let agentToolCalls: any[] = [];
 
             if (this.queryOptions.includeContext && this.knowledgeAgent) {
-                // Use agent for knowledge graph search
-                const agentResponse = await this.knowledgeAgent.processQuery(message);
+                // Use agent for knowledge graph search with streaming progress indicators
+                this.updateUIState(true, '🤖 Starting AI agent...');
+                
+                // Show agent thinking indicator
+                const thinkingMessage: ChatMessage = {
+                    id: 'thinking-' + Date.now(),
+                    role: 'assistant',
+                    content: '🤖 Analyzing your question and planning search strategy...',
+                    timestamp: Date.now()
+                };
+                this.messages.push(thinkingMessage);
+                this.renderMessages();
+                
+                // Use streaming version for better progress feedback
+                const agentStream = this.knowledgeAgent.processQueryStreaming(message);
+                let agentResponse: any = { content: '', toolCalls: [] };
+                
+                for await (const chunk of agentStream) {
+                    switch (chunk.type) {
+                        case 'tool_start':
+                            this.updateUIState(true, `🛠️ Using ${chunk.data.toolName}...`);
+                            thinkingMessage.content = `🔍 Searching with ${chunk.data.toolName}...`;
+                            this.renderMessages();
+                            break;
+                        case 'tool_result':
+                            const toolData = chunk.data.toolCall;
+                            if (toolData?.result?.found > 0) {
+                                thinkingMessage.content = `✅ Found ${toolData.result.found} relevant ${toolData.result.found === 1 ? 'note' : 'notes'}...`;
+                            } else {
+                                thinkingMessage.content = `🔍 Continuing search...`;
+                            }
+                            this.renderMessages();
+                            break;
+                        case 'response_start':
+                            this.updateUIState(true, '✨ Generating response...');
+                            thinkingMessage.content = '🧠 Analyzing results and crafting response...';
+                            this.renderMessages();
+                            break;
+                        case 'response_end':
+                            agentResponse = chunk.data;
+                            break;
+                    }
+                }
+                
+                // Remove thinking message
+                this.messages = this.messages.filter(msg => msg.id !== thinkingMessage.id);
                 
                 response = {
-                    content: agentResponse.content,
+                    content: agentResponse.content || 'No response generated',
                     provider: this.queryOptions.provider,
                     model: this.queryOptions.model,
                     usage: {
@@ -277,7 +321,7 @@ export class ChatView extends ItemView {
                 };
                 
                 // Extract related notes from tool calls
-                for (const toolCall of agentResponse.toolCalls) {
+                for (const toolCall of agentResponse.toolCalls || []) {
                     if (toolCall.result && toolCall.result.results) {
                         for (const result of toolCall.result.results) {
                             if (result.path) {
@@ -287,10 +331,12 @@ export class ChatView extends ItemView {
                     }
                 }
                 
-                agentToolCalls = agentResponse.toolCalls;
+                agentToolCalls = agentResponse.toolCalls || [];
                 
             } else {
                 // Direct LLM call without knowledge graph
+                this.updateUIState(true, '🧠 Generating response...');
+                
                 const conversationHistory = this.messages.slice(-10).map(msg => ({
                     role: msg.role === 'user' ? 'user' : 'assistant',
                     content: msg.content
@@ -358,8 +404,9 @@ export class ChatView extends ItemView {
         }
 
         this.messages.forEach(message => {
+            const isThinking = message.id?.startsWith('thinking-');
             const messageEl = this.messagesList.createEl('div', {
-                cls: `message message-${message.role}`
+                cls: `message message-${message.role}${isThinking ? ' message-thinking' : ''}`
             });
 
             // Message header
@@ -490,13 +537,16 @@ export class ChatView extends ItemView {
         });
     }
 
-    private updateUIState(processing: boolean) {
+    private updateUIState(processing: boolean, status?: string) {
         this.sendButton.disabled = processing;
-        this.sendButton.textContent = processing ? 'Sending...' : 'Send';
         
         if (processing) {
+            this.sendButton.textContent = status || 'Thinking...';
+            this.sendButton.classList.add('is-loading');
             this.inputArea.setAttribute('disabled', 'true');
         } else {
+            this.sendButton.textContent = 'Send';
+            this.sendButton.classList.remove('is-loading');
             this.inputArea.removeAttribute('disabled');
             this.inputArea.focus();
         }
