@@ -76,9 +76,12 @@ export class KnowledgeGraph {
         try {
             await this.embeddingManager.initialize();
             
-            // Initial indexing if no data exists
-            if (this.documents.size === 0) {
+            // Initial indexing if no data exists or embeddings are missing
+            if (this.documents.size === 0 || this.embeddings.size === 0) {
+                console.log(`Building initial index: ${this.documents.size} documents, ${this.embeddings.size} embeddings`);
                 await this.buildIndex();
+            } else {
+                console.log(`Using cached index: ${this.documents.size} documents, ${this.embeddings.size} embeddings`);
             }
             
             console.log('Knowledge graph initialized successfully');

@@ -145,14 +145,20 @@ export default class ChatWithNotesPlugin extends Plugin {
 
         // Initialize knowledge graph only if enabled
         if (this.settings.enableKnowledgeGraph) {
+            const initNotice = new Notice('Initializing knowledge graph...', 0); // Persistent notice
+            
             this.embeddingManager = new EmbeddingManager({
                 ...this.settings.embedding,
                 enabled: true
             });
             
             try {
+                console.log('Starting knowledge graph initialization...');
+                initNotice.setMessage('Loading embedding model...');
+                
                 await this.embeddingManager.initialize();
                 
+                initNotice.setMessage('Creating knowledge graph...');
                 this.knowledgeGraph = new KnowledgeGraph(
                     { ...this.settings.knowledgeGraph, enabled: true },
                     this.embeddingManager,
@@ -160,14 +166,19 @@ export default class ChatWithNotesPlugin extends Plugin {
                     this.app.metadataCache
                 );
                 
-                await this.knowledgeGraph.initialize();
+                // Initialize with progress tracking
+                await this.initializeKnowledgeGraphWithProgress(initNotice);
+                
                 const stats = this.knowledgeGraph.getStats();
                 console.log('Knowledge graph initialized successfully', stats);
-                new Notice(`Knowledge graph loaded: ${stats.documentsCount} documents, ${stats.embeddingsCount} embeddings`);
+                
+                initNotice.hide();
+                new Notice(`Knowledge graph ready: ${stats.documentsCount} documents indexed for AI search`, 4000);
             } catch (error) {
+                initNotice.hide();
                 console.error('Failed to initialize knowledge graph:', error);
-                new Notice('Failed to load knowledge graph. Continuing without it.');
-                this.settings.enableKnowledgeGraph = false;
+                new Notice('Knowledge graph initialization failed. Tool use will be limited.', 6000);
+                // Don't disable completely - still allow direct LLM calls
             }
         }
     }
@@ -269,6 +280,44 @@ export default class ChatWithNotesPlugin extends Plugin {
         // Reinitialize provider manager
         if (this.providerManager) {
             this.providerManager.updateConfig(this.settings.providers);
+        }
+    }
+
+    private async initializeKnowledgeGraphWithProgress(notice: Notice): Promise<void> {
+        if (!this.knowledgeGraph) return;
+        
+        // Check if we already have cached data
+        const initialStats = this.knowledgeGraph.getStats();
+        
+        if (initialStats.documentsCount === 0) {
+            // Need to build initial index
+            notice.setMessage('Building knowledge index from your notes...');
+            
+            // Monitor progress during indexing
+            const progressInterval = setInterval(() => {
+                const currentStats = this.knowledgeGraph?.getStats();
+                if (currentStats && currentStats.isIndexing) {
+                    notice.setMessage(`Indexing notes... (${currentStats.documentsCount} processed)`);
+                }
+            }, 1000);
+            
+            try {
+                await this.knowledgeGraph.initialize();
+                
+                // Wait for indexing to complete if it's running
+                while (this.knowledgeGraph.getStats().isIndexing) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                
+                clearInterval(progressInterval);
+            } catch (error) {
+                clearInterval(progressInterval);
+                throw error;
+            }
+        } else {
+            // Use cached data
+            notice.setMessage(`Loading cached index (${initialStats.documentsCount} documents)...`);
+            await this.knowledgeGraph.initialize();
         }
     }
 }
