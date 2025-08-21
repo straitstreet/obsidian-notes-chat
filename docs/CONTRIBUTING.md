@@ -138,8 +138,9 @@ npm run dev-install
 ### 4. Testing Your Changes
 
 #### Required Tests
-- **Unit Tests**: `npm run test:unit`
-- **Integration Tests**: `npm run test:integration`
+- **CI Tests**: `npm run test:ci` (unit tests only, no network)
+- **Unit Tests**: `npm run test:unit`  
+- **Integration Tests**: `npm run test:integration` (local only)
 - **Agent Tests**: `npm run test:agent-suite`
 - **Manual Testing**: Test in actual Obsidian environment
 
@@ -327,8 +328,11 @@ input.setAttribute('placeholder', 'Type your message...');
 ### Running Tests
 
 ```bash
-# Full test suite
+# CI tests (unit only, no network access)
 npm run test:ci
+
+# Full test suite (includes integration tests)
+npm run test:all
 
 # Specific test types
 npm run test:unit

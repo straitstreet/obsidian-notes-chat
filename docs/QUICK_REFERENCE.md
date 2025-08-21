@@ -90,8 +90,10 @@ FINAL_ANSWER: Your comprehensive response
 
 ### Test Commands
 ```bash
-npm run test:ci              # All tests with coverage
+npm run test:ci              # CI tests (unit only, no network)
+npm run test:all             # All tests with coverage  
 npm run test:unit            # Unit tests only
+npm run test:integration     # Integration tests only
 npm run test:agent           # Interactive agent test
 npm run test:agent-suite     # Automated agent tests
 node tests/test-tool-use.js  # Tool parsing validation
