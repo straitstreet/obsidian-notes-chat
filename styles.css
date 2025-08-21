@@ -643,3 +643,43 @@
         transform: rotate(360deg);
     }
 }
+
+/* Command help styling */
+.command-help {
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+}
+
+.command-help h5 {
+    margin: 0 0 8px 0;
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+.command-help ul {
+    margin: 0 0 8px 0;
+    padding-left: 16px;
+}
+
+.command-help li {
+    margin: 4px 0;
+    font-size: 0.85em;
+}
+
+.command-help code {
+    background: var(--background-modifier-border);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: var(--font-monospace);
+    font-size: 0.9em;
+}
+
+.command-help p {
+    margin: 8px 0 0 0;
+    font-size: 0.8em;
+    color: var(--text-muted);
+    font-style: italic;
+}

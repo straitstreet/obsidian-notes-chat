@@ -229,6 +229,10 @@ export class ChatView extends ItemView {
         const message = this.inputArea.value?.trim();
         if (!message || this.isProcessing) return;
 
+        // Check for force tool use commands
+        const forceToolUse = message.startsWith('/search') || message.startsWith('/agent') || message.startsWith('/tools');
+        const cleanMessage = forceToolUse ? message.replace(/^\/\w+\s*/, '') : message;
+
         // Check budget (only if budget manager exists)
         if (this.budgetManager) {
             const budgetStatus = this.budgetManager.getBudgetStatus();
@@ -241,7 +245,7 @@ export class ChatView extends ItemView {
         this.isProcessing = true;
         this.updateUIState(true);
 
-        // Add user message
+        // Add user message (show original message with command)
         const userMessage: ChatMessage = {
             id: Date.now().toString(),
             role: 'user',
@@ -261,43 +265,46 @@ export class ChatView extends ItemView {
             let relatedNotes: string[] = [];
             let agentToolCalls: any[] = [];
 
-            if (this.queryOptions.includeContext && this.knowledgeAgent) {
+            // Use agent if context enabled OR force command used
+            if ((this.queryOptions.includeContext || forceToolUse) && this.knowledgeAgent) {
                 // Use agent for knowledge graph search with streaming progress indicators
-                this.updateUIState(true, '🤖 Starting AI agent...');
+                this.updateUIState(true, 'Starting AI agent...');
                 
-                // Show agent thinking indicator
-                const thinkingMessage: ChatMessage = {
-                    id: 'thinking-' + Date.now(),
-                    role: 'assistant',
-                    content: '🤖 Analyzing your question and planning search strategy...',
+                // Create tool execution indicator
+                const toolIndicator: ChatMessage = {
+                    id: 'tools-' + Date.now(),
+                    role: 'system',
+                    content: forceToolUse ? 
+                        `**AI Agent Force Activated** - Processing command: \`${message.split(' ')[0]}\`\n\nAnalyzing your question...` :
+                        '**AI Agent Active** - Analyzing your question...',
                     timestamp: Date.now()
                 };
-                this.messages.push(thinkingMessage);
+                this.messages.push(toolIndicator);
                 this.renderMessages();
                 
                 // Use streaming version for better progress feedback
-                const agentStream = this.knowledgeAgent.processQueryStreaming(message);
+                const agentStream = this.knowledgeAgent.processQueryStreaming(cleanMessage || message);
                 let agentResponse: any = { content: '', toolCalls: [] };
+                const toolResults: any[] = [];
                 
                 for await (const chunk of agentStream) {
                     switch (chunk.type) {
                         case 'tool_start':
-                            this.updateUIState(true, `🛠️ Using ${chunk.data.toolName}...`);
-                            thinkingMessage.content = `🔍 Searching with ${chunk.data.toolName}...`;
+                            this.updateUIState(true, `Using ${chunk.data.toolName}...`);
+                            toolIndicator.content = `**Tool Active**: \`${chunk.data.toolName}\`\n\nSearching your notes with ${this.getToolDescription(chunk.data.toolName)}...`;
                             this.renderMessages();
                             break;
                         case 'tool_result':
-                            const toolData = chunk.data.toolCall;
-                            if (toolData?.result?.found > 0) {
-                                thinkingMessage.content = `✅ Found ${toolData.result.found} relevant ${toolData.result.found === 1 ? 'note' : 'notes'}...`;
-                            } else {
-                                thinkingMessage.content = `🔍 Continuing search...`;
-                            }
+                            const toolCall = chunk.data.toolCall;
+                            toolResults.push(toolCall);
+                            
+                            const resultSummary = this.formatToolResult(toolCall);
+                            toolIndicator.content = `**Tools Used**: ${toolResults.map(t => `\`${t.toolName}\``).join(', ')}\n\n${toolResults.map(t => this.formatToolResult(t)).join('\n\n')}`;
                             this.renderMessages();
                             break;
                         case 'response_start':
-                            this.updateUIState(true, '✨ Generating response...');
-                            thinkingMessage.content = '🧠 Analyzing results and crafting response...';
+                            this.updateUIState(true, 'Generating response...');
+                            toolIndicator.content = `**Agent Complete** - Used ${toolResults.length} tool${toolResults.length !== 1 ? 's' : ''}\n\n${toolResults.map(t => this.formatToolResult(t)).join('\n\n')}\n\nNow generating comprehensive response...`;
                             this.renderMessages();
                             break;
                         case 'response_end':
@@ -306,8 +313,8 @@ export class ChatView extends ItemView {
                     }
                 }
                 
-                // Remove thinking message
-                this.messages = this.messages.filter(msg => msg.id !== thinkingMessage.id);
+                // Remove tool indicator message
+                this.messages = this.messages.filter(msg => msg.id !== toolIndicator.id);
                 
                 response = {
                     content: agentResponse.content || 'No response generated',
@@ -335,19 +342,29 @@ export class ChatView extends ItemView {
                 
             } else {
                 // Direct LLM call without knowledge graph
-                this.updateUIState(true, '🧠 Generating response...');
-                
-                const conversationHistory = this.messages.slice(-10).map(msg => ({
-                    role: msg.role === 'user' ? 'user' : 'assistant',
-                    content: msg.content
-                }));
+                if (forceToolUse) {
+                    // User tried to force tool use but no agent available
+                    response = {
+                        content: `**Tool use requested but not available**\n\nYou used the command \`${message.split(' ')[0]}\` to force tool use, but either:\n- Knowledge graph is not initialized\n- AI agent is not available\n\nTo enable tool use:\n1. Enable "Use AI agent to search my notes" in the chat settings\n2. Ensure your vault has been indexed for search\n\nFor now, I'll respond without using tools.`,
+                        provider: this.queryOptions.provider,
+                        model: this.queryOptions.model,
+                        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+                    };
+                } else {
+                    this.updateUIState(true, 'Generating response...');
+                    
+                    const conversationHistory = this.messages.slice(-10).map(msg => ({
+                        role: msg.role === 'user' ? 'user' : 'assistant',
+                        content: msg.content
+                    }));
 
-                response = await this.llmManager.generateResponse(
-                    this.queryOptions.provider,
-                    this.queryOptions.model,
-                    conversationHistory,
-                    { temperature: this.queryOptions.temperature }
-                );
+                    response = await this.llmManager.generateResponse(
+                        this.queryOptions.provider,
+                        this.queryOptions.model,
+                        conversationHistory,
+                        { temperature: this.queryOptions.temperature }
+                    );
+                }
             }
 
             // Add assistant message
@@ -397,8 +414,20 @@ export class ChatView extends ItemView {
             const welcomeEl = this.messagesList.createEl('div', { cls: 'welcome-message' });
             welcomeEl.createEl('h4', { text: 'Welcome to Chat with Notes!' });
             welcomeEl.createEl('p', { text: 'Ask me anything and I\'ll help you out.' });
-            if (this.knowledgeGraph) {
-                welcomeEl.createEl('p', { text: 'Enable "Use AI agent to search my notes" to let me intelligently search through your notes using multiple strategies and provide comprehensive answers based on your knowledge base.' });
+            
+            if (this.knowledgeAgent) {
+                const commandsEl = welcomeEl.createEl('div', { cls: 'command-help' });
+                commandsEl.createEl('h5', { text: 'Tool Use Commands:' });
+                const commandsList = commandsEl.createEl('ul');
+                commandsList.createEl('li').innerHTML = '<code>/search</code> - Force AI agent to search your notes';
+                commandsList.createEl('li').innerHTML = '<code>/agent</code> - Activate AI agent with tool use';
+                commandsList.createEl('li').innerHTML = '<code>/tools</code> - Use specialized search tools';
+                
+                if (!this.queryOptions.includeContext) {
+                    commandsEl.createEl('p', { text: 'Note: Tool use is currently disabled. Use these commands to force tool use, or enable "Use AI agent to search my notes" above.' });
+                } else {
+                    commandsEl.createEl('p', { text: 'Tool use is enabled by default. Use these commands to explicitly force tool use.' });
+                }
             }
             return;
         }
@@ -643,5 +672,44 @@ export class ChatView extends ItemView {
 
     async onClose() {
         this.saveMessages();
+    }
+
+    private getToolDescription(toolName: string): string {
+        const descriptions: { [key: string]: string } = {
+            'semantic_search': 'semantic similarity matching',
+            'text_search': 'exact text matching',
+            'search_recent_notes': 'recent notes with filtering',
+            'search_by_date': 'time-based filtering',
+            'find_specific_info': 'pattern extraction (VIN, phone, email)',
+            'search_by_tags': 'tag-based filtering',
+            'search_by_links': 'relationship analysis',
+            'get_note_details': 'detailed note content'
+        };
+        return descriptions[toolName] || 'specialized search';
+    }
+
+    private formatToolResult(toolCall: any): string {
+        const { toolName, result } = toolCall;
+        if (result.error) {
+            return `**${toolName}**: Error - ${result.error}`;
+        }
+        
+        const found = result.found || 0;
+        if (found === 0) {
+            return `**${toolName}**: No results found`;
+        }
+        
+        const noteWord = found === 1 ? 'note' : 'notes';
+        let summary = `**${toolName}**: Found ${found} ${noteWord}`;
+        
+        // Add snippet of top results
+        if (result.results && result.results.length > 0) {
+            const topResult = result.results[0];
+            if (topResult.title) {
+                summary += ` (top: "${topResult.title}")`;
+            }
+        }
+        
+        return summary;
     }
 }
