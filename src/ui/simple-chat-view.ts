@@ -418,7 +418,27 @@ export class ChatView extends ItemView {
                 cls: 'message-role'
             });
 
-            const timeEl = headerEl.createEl('span', {
+            const rightSection = headerEl.createEl('div', { cls: 'message-header-right' });
+            
+            // Copy button (only for assistant messages)
+            if (message.role === 'assistant') {
+                const copyBtn = rightSection.createEl('button', {
+                    text: '📋',
+                    cls: 'copy-message-btn',
+                    attr: { 'aria-label': 'Copy message' }
+                });
+                copyBtn.addEventListener('click', () => {
+                    navigator.clipboard.writeText(message.content).then(() => {
+                        copyBtn.textContent = '✅';
+                        setTimeout(() => copyBtn.textContent = '📋', 2000);
+                    }).catch(() => {
+                        copyBtn.textContent = '❌';
+                        setTimeout(() => copyBtn.textContent = '📋', 2000);
+                    });
+                });
+            }
+            
+            const timeEl = rightSection.createEl('span', {
                 text: new Date(message.timestamp).toLocaleTimeString(),
                 cls: 'message-time'
             });

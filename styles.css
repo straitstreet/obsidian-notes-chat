@@ -186,6 +186,10 @@
     position: relative;
     margin-bottom: 4px;
     word-wrap: break-word;
+    user-select: text; /* Ensure text can be selected */
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
 }
 
 .message-user {
@@ -223,6 +227,32 @@
     font-size: 0.8em;
 }
 
+.message-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.copy-message-btn {
+    background: transparent;
+    border: none;
+    padding: 2px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+}
+
+.copy-message-btn:hover {
+    opacity: 1;
+    background: var(--background-modifier-hover);
+}
+
+.copy-message-btn:active {
+    transform: scale(0.95);
+}
+
 .message-role {
     font-weight: 500;
 }
@@ -253,6 +283,8 @@
     overflow-x: auto;
     font-family: var(--font-monospace);
     font-size: 0.9em;
+    user-select: text;
+    -webkit-user-select: text;
 }
 
 .message-content code {
