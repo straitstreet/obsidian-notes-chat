@@ -46,10 +46,12 @@ src/
 
 ### Scripts Available
 ```bash
-npm run dev                    # Development mode
+npm run dev                    # Development mode with watch
 npm run build                 # Production build
 npm run test:ci               # CI tests with coverage
 npm run generate-vault        # Create test vault
+npm run dev-install           # Build and install to test vault
+npm run dev-uninstall         # Remove from test vault
 npm run package              # Create release package
 npm run deploy               # Deploy to repository
 ```
@@ -87,6 +89,12 @@ npm run deploy               # Deploy to repository
 - No unnecessary comments unless complex logic
 - Follow Obsidian plugin conventions
 - Use existing libraries (Vercel AI SDK) over custom implementations
+
+### Development Process
+1. **Quick Testing**: `npm run dev-install` - builds and installs to test-vault
+2. **Development**: `npm run dev` - auto-rebuilds on changes
+3. **Update Test Vault**: `npm run dev-install` - after making changes
+4. **Remove from Test**: `npm run dev-uninstall` - clean test environment
 
 ### Deployment Process
 1. Run tests: `npm run test:ci`

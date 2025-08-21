@@ -1,8 +1,11 @@
 import { generateText, streamText } from 'ai';
-import { openai } from '@ai-sdk/openai';
-import { anthropic } from '@ai-sdk/anthropic';
-import { google } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOllama } from 'ollama-ai-provider';
+import { requestUrl } from 'obsidian';
+import { BudgetManager } from '../budget/budget-manager';
+import { BudgetNotifications } from '../budget/budget-notifications';
 
 export interface LLMProvider {
     name: string;
@@ -37,9 +40,13 @@ export class LLMProviderManager {
     private providers = new Map<string, LLMProvider>();
     private config: LLMProviderConfig;
     private aiProviders = new Map<string, any>();
+    private budgetManager?: BudgetManager;
+    private budgetNotifications?: BudgetNotifications;
 
-    constructor(config: LLMProviderConfig) {
+    constructor(config: LLMProviderConfig, budgetManager?: BudgetManager, budgetNotifications?: BudgetNotifications) {
         this.config = config;
+        this.budgetManager = budgetManager;
+        this.budgetNotifications = budgetNotifications;
         this.initializeProviders();
     }
 
@@ -49,21 +56,39 @@ export class LLMProviderManager {
             this.providers.set('openai', {
                 name: 'OpenAI',
                 models: this.config.openai.models || [
+                    'gpt-5',
+                    'gpt-5-mini',
+                    'gpt-5-nano',
                     'gpt-4.1',
                     'gpt-4.1-mini',
                     'gpt-4.1-nano',
+                    'gpt-4.5',
+                    'o3-mini',
                     'gpt-4o',
-                    'gpt-4o-mini',
-                    'gpt-4-turbo',
-                    'o3',
-                    'o4-mini'
+                    'gpt-4o-mini'
                 ],
                 isLocal: false,
                 supportsStreaming: true,
                 enabled: true
             });
 
-            this.aiProviders.set('openai', openai);
+            this.aiProviders.set('openai', createOpenAI({
+                apiKey: this.config.openai.apiKey,
+                ...(this.config.openai.baseUrl && { baseURL: this.config.openai.baseUrl }),
+                fetch: async (url, init) => {
+                    const response = await requestUrl({
+                        url: url.toString(),
+                        method: init?.method as any || 'GET',
+                        headers: init?.headers as Record<string, string>,
+                        body: init?.body as string,
+                        throw: false
+                    });
+                    return new Response(response.text, {
+                        status: response.status,
+                        headers: response.headers
+                    });
+                }
+            }));
         }
 
         // Anthropic
@@ -83,7 +108,23 @@ export class LLMProviderManager {
                 enabled: true
             });
 
-            this.aiProviders.set('anthropic', anthropic);
+            this.aiProviders.set('anthropic', createAnthropic({
+                apiKey: this.config.anthropic.apiKey,
+                ...(this.config.anthropic.baseUrl && { baseURL: this.config.anthropic.baseUrl }),
+                fetch: async (url, init) => {
+                    const response = await requestUrl({
+                        url: url.toString(),
+                        method: init?.method as any || 'GET',
+                        headers: init?.headers as Record<string, string>,
+                        body: init?.body as string,
+                        throw: false
+                    });
+                    return new Response(response.text, {
+                        status: response.status,
+                        headers: response.headers
+                    });
+                }
+            }));
         }
 
         // Google
@@ -95,17 +136,33 @@ export class LLMProviderManager {
                     'gemini-2.5-flash',
                     'gemini-2.5-flash-lite',
                     'gemini-2.0-flash',
-                    'gemini-2.0-flash-thinking',
                     'gemini-2.0-pro',
-                    'gemini-1.5-pro',
-                    'gemini-1.5-flash'
+                    'gemini-2.0-flash-lite',
+                    'gemini-1.5-pro-latest',
+                    'gemini-1.5-flash-latest'
                 ],
                 isLocal: false,
                 supportsStreaming: true,
                 enabled: true
             });
 
-            this.aiProviders.set('google', google);
+            this.aiProviders.set('google', createGoogleGenerativeAI({
+                apiKey: this.config.google.apiKey,
+                ...(this.config.google.baseUrl && { baseURL: this.config.google.baseUrl }),
+                fetch: async (url, init) => {
+                    const response = await requestUrl({
+                        url: url.toString(),
+                        method: init?.method as any || 'GET',
+                        headers: init?.headers as Record<string, string>,
+                        body: init?.body as string,
+                        throw: false
+                    });
+                    return new Response(response.text, {
+                        status: response.status,
+                        headers: response.headers
+                    });
+                }
+            }));
         }
 
         // Ollama (Local)
@@ -189,27 +246,24 @@ export class LLMProviderManager {
             stream?: boolean;
         } = {}
     ): Promise<LLMResponse> {
+        // Check budget before making request
+        if (this.budgetManager) {
+            const estimatedCost = this.estimateRequestCost(provider, model, messages, options.maxTokens);
+            if (!this.budgetManager.canAffordRequest(estimatedCost)) {
+                const status = this.budgetManager.getBudgetStatus();
+                throw new Error(`Budget exceeded. Current spend: $${status.currentSpend.toFixed(2)}/${status.monthlyLimit.toFixed(2)}`);
+            }
+        }
         const aiProvider = this.aiProviders.get(provider);
         if (!aiProvider) {
             throw new Error(`Provider ${provider} not configured or not supported`);
         }
 
         try {
-            // Configure the provider with settings
-            const providerConfig = this.config[provider];
-            const configuredProvider = provider === 'openai' ? aiProvider({
-                apiKey: providerConfig?.apiKey,
-                ...(providerConfig?.baseUrl && { baseURL: providerConfig.baseUrl })
-            }) : provider === 'anthropic' ? aiProvider({
-                apiKey: providerConfig?.apiKey,
-                ...(providerConfig?.baseUrl && { baseURL: providerConfig.baseUrl })
-            }) : provider === 'google' ? aiProvider({
-                apiKey: providerConfig?.apiKey,
-                ...(providerConfig?.baseUrl && { baseURL: providerConfig.baseUrl })
-            }) : aiProvider;
+            // Use the pre-configured provider
 
             const result = await generateText({
-                model: configuredProvider(model),
+                model: aiProvider(model),
                 messages: messages as any,
                 maxTokens: options.maxTokens || 1000,
                 temperature: options.temperature || 0.7,
@@ -222,6 +276,25 @@ export class LLMProviderManager {
                 cost: this.calculateCost(provider, model, result.usage)
             } : undefined;
 
+            // Record usage in budget manager
+            if (this.budgetManager && usage) {
+                this.budgetManager.recordUsage({
+                    provider,
+                    model,
+                    cost: usage.cost || 0,
+                    inputTokens: usage.inputTokens,
+                    outputTokens: usage.outputTokens,
+                    totalTokens: usage.totalTokens
+                });
+
+                // Check budget status and show notifications
+                if (this.budgetNotifications) {
+                    const status = this.budgetManager.getBudgetStatus();
+                    this.budgetNotifications.checkAndNotify(status);
+                    this.budgetNotifications.showCostNotification(usage.cost || 0, provider, model);
+                }
+            }
+
             return {
                 content: result.text,
                 usage,
@@ -229,7 +302,11 @@ export class LLMProviderManager {
                 model
             };
         } catch (error: any) {
-            throw new Error(`Failed to generate response from ${provider}: ${error.message}`);
+            // Preserve original error details for better debugging
+            const errorMessage = error.message || 'Unknown error';
+            const errorDetails = error.response?.data || error.cause || error.stack || '';
+            const fullError = errorDetails ? `${errorMessage}\nDetails: ${JSON.stringify(errorDetails, null, 2)}` : errorMessage;
+            throw new Error(`Failed to generate response from ${provider}: ${fullError}`);
         }
     }
 
@@ -277,22 +354,34 @@ export class LLMProviderManager {
         // Simplified cost calculation - you can make this more detailed
         const costPer1kTokens: { [key: string]: { [model: string]: { input: number; output: number } } } = {
             openai: {
+                'gpt-5': { input: 0.01, output: 0.03 },
+                'gpt-5-mini': { input: 0.002, output: 0.008 },
+                'gpt-5-nano': { input: 0.0005, output: 0.002 },
+                'gpt-4.1': { input: 0.008, output: 0.025 },
+                'gpt-4.1-mini': { input: 0.001, output: 0.004 },
+                'gpt-4.1-nano': { input: 0.0003, output: 0.001 },
+                'gpt-4.5': { input: 0.006, output: 0.02 },
+                'o3-mini': { input: 0.004, output: 0.016 },
                 'gpt-4o': { input: 0.005, output: 0.015 },
-                'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
-                'gpt-4-turbo': { input: 0.01, output: 0.03 },
-                'gpt-4': { input: 0.03, output: 0.06 },
-                'gpt-3.5-turbo': { input: 0.0005, output: 0.0015 }
+                'gpt-4o-mini': { input: 0.00015, output: 0.0006 }
             },
             anthropic: {
+                'claude-4-opus-4.1': { input: 0.015, output: 0.075 },
+                'claude-4-sonnet': { input: 0.003, output: 0.015 },
+                'claude-3.7-sonnet': { input: 0.003, output: 0.015 },
                 'claude-3-5-sonnet-20241022': { input: 0.003, output: 0.015 },
-                'claude-3-opus-20240229': { input: 0.015, output: 0.075 },
-                'claude-3-sonnet-20240229': { input: 0.003, output: 0.015 },
-                'claude-3-haiku-20240307': { input: 0.00025, output: 0.00125 }
+                'claude-3-5-haiku-20241022': { input: 0.00025, output: 0.00125 },
+                'claude-3-opus-20240229': { input: 0.015, output: 0.075 }
             },
             google: {
-                'gemini-1.5-pro': { input: 0.0035, output: 0.0105 },
-                'gemini-1.5-flash': { input: 0.000075, output: 0.0003 },
-                'gemini-pro': { input: 0.0005, output: 0.0015 }
+                'gemini-2.5-pro': { input: 0.004, output: 0.012 },
+                'gemini-2.5-flash': { input: 0.0001, output: 0.0004 },
+                'gemini-2.5-flash-lite': { input: 0.00005, output: 0.0002 },
+                'gemini-2.0-flash': { input: 0.0002, output: 0.0008 },
+                'gemini-2.0-pro': { input: 0.005, output: 0.015 },
+                'gemini-2.0-flash-lite': { input: 0.00005, output: 0.0002 },
+                'gemini-1.5-pro-latest': { input: 0.0035, output: 0.0105 },
+                'gemini-1.5-flash-latest': { input: 0.000075, output: 0.0003 }
             },
             ollama: {},  // Local models are free
             groq: {
@@ -332,5 +421,26 @@ export class LLMProviderManager {
         }
         
         return status;
+    }
+
+    private estimateRequestCost(provider: string, model: string, messages: Array<{ role: string; content: string }>, maxTokens = 1000): number {
+        // Rough estimation based on input tokens and expected output
+        const inputText = messages.map(m => m.content).join(' ');
+        const estimatedInputTokens = Math.ceil(inputText.length / 4); // Rough approximation
+        const estimatedOutputTokens = Math.min(maxTokens, 500); // Conservative estimate
+        
+        return this.calculateCost(provider, model, {
+            promptTokens: estimatedInputTokens,
+            completionTokens: estimatedOutputTokens,
+            totalTokens: estimatedInputTokens + estimatedOutputTokens
+        });
+    }
+
+    setBudgetManager(budgetManager: BudgetManager): void {
+        this.budgetManager = budgetManager;
+    }
+
+    setBudgetNotifications(budgetNotifications: BudgetNotifications): void {
+        this.budgetNotifications = budgetNotifications;
     }
 }
