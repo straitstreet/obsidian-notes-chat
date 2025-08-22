@@ -169,7 +169,6 @@ export class ChatView extends ItemView {
             if (this.knowledgeAgent) {
                 // Use knowledge agent to search notes
                 const response = await this.knowledgeAgent.processQuery(question);
-                this.currentAnswer = response.content || 'No answer found.';
                 
                 // Extract related notes from tool calls for linking
                 this.currentRelatedNotes = [];
@@ -183,6 +182,17 @@ export class ChatView extends ItemView {
                             }
                         }
                     }
+                }
+                
+                // Provide better messaging based on results
+                if (!response.content || response.content.trim() === '') {
+                    if (this.currentRelatedNotes.length === 0) {
+                        this.currentAnswer = this.getNoResultsMessage(question);
+                    } else {
+                        this.currentAnswer = `I found ${this.currentRelatedNotes.length} related note(s) but couldn't generate a comprehensive answer. Please check the referenced notes below.`;
+                    }
+                } else {
+                    this.currentAnswer = response.content;
                 }
             } else {
                 // Fallback to direct LLM without note context
@@ -276,13 +286,36 @@ export class ChatView extends ItemView {
     }
 
     private renderContent(container: HTMLElement, content: string) {
-        // Simple formatting for readability
+        // Simple formatting for readability with basic markdown support
         const lines = content.split('\n');
+        let currentList: HTMLElement | null = null;
+        
         lines.forEach(line => {
-            if (line.trim()) {
-                const p = container.createEl('p');
-                p.textContent = line;
+            const trimmed = line.trim();
+            if (!trimmed) return;
+            
+            // Handle headers
+            if (trimmed.startsWith('**') && trimmed.endsWith('**')) {
+                currentList = null;
+                const headerText = trimmed.slice(2, -2);
+                const h = container.createEl('h4', { text: headerText, cls: 'no-results-header' });
+                return;
             }
+            
+            // Handle bullet points
+            if (trimmed.startsWith('• ')) {
+                if (!currentList) {
+                    currentList = container.createEl('ul', { cls: 'suggestions-list' });
+                }
+                const li = currentList.createEl('li');
+                li.textContent = trimmed.slice(2);
+                return;
+            }
+            
+            // Regular paragraph
+            currentList = null;
+            const p = container.createEl('p');
+            p.textContent = line;
         });
     }
 
@@ -299,6 +332,22 @@ export class ChatView extends ItemView {
             icon.removeClass('animate-spin');
             this.inputArea.focus();
         }
+    }
+
+    private getNoResultsMessage(question: string): string {
+        const suggestions = [
+            `Try different keywords or phrases`,
+            `Check if you have notes about "${question}" with different wording`,
+            `Make sure your notes are saved and indexed`,
+            `Try more general terms (e.g., "${question.split(' ')[0]}")`
+        ];
+        
+        return `I couldn't find any notes matching "${question}".
+
+**Suggestions:**
+${suggestions.map(s => `• ${s}`).join('\n')}
+
+If you recently created notes about this topic, they might still be indexing. Try again in a moment, or create a note about "${question}" to get started!`;
     }
 
     // Simplified - no message persistence needed for search-style interface
