@@ -122,3 +122,55 @@
     color: var(--text-muted);
     font-style: italic;
 }
+
+/* Related Notes Section */
+.related-notes-section {
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--background-secondary);
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.related-notes-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-normal);
+    margin-bottom: 8px;
+}
+
+.related-notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.related-note-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.related-note-link {
+    color: var(--text-accent);
+    text-decoration: none;
+    font-size: 12px;
+    cursor: pointer;
+    flex: 1;
+}
+
+.related-note-link:hover {
+    text-decoration: underline;
+}
+
+.note-preview-icon {
+    opacity: 0.6;
+    font-size: 10px;
+}
+
+.more-notes-indicator {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+    padding-top: 4px;
+}

@@ -67,7 +67,6 @@ const context = await esbuild.context({
 		'global': 'globalThis',
 		'process.env.NODE_ENV': JSON.stringify(prod ? 'production' : 'development'),
 	},
-	inject: ['./polyfills.js'],
 });
 
 if (prod) {

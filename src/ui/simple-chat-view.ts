@@ -31,6 +31,7 @@ export class ChatView extends ItemView {
     
     private currentQuestion = '';
     private currentAnswer = '';
+    private currentRelatedNotes: string[] = [];
     private isProcessing = false;
     
     private container!: HTMLElement;
@@ -169,6 +170,20 @@ export class ChatView extends ItemView {
                 // Use knowledge agent to search notes
                 const response = await this.knowledgeAgent.processQuery(question);
                 this.currentAnswer = response.content || 'No answer found.';
+                
+                // Extract related notes from tool calls for linking
+                this.currentRelatedNotes = [];
+                if (response.toolCalls) {
+                    for (const toolCall of response.toolCalls) {
+                        if (toolCall.result && toolCall.result.results) {
+                            for (const result of toolCall.result.results) {
+                                if (result.path && !this.currentRelatedNotes.includes(result.path)) {
+                                    this.currentRelatedNotes.push(result.path);
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
                 // Fallback to direct LLM without note context
                 const { provider, model } = this.getBestAvailableModel();
@@ -179,11 +194,13 @@ export class ChatView extends ItemView {
                     { temperature: 0.3 }
                 );
                 this.currentAnswer = response.content;
+                this.currentRelatedNotes = []; // No notes in direct LLM mode
             }
             
         } catch (error) {
             console.error('Search failed:', error);
             this.currentAnswer = 'Sorry, I encountered an error while searching your notes.';
+            this.currentRelatedNotes = [];
         } finally {
             this.isProcessing = false;
             this.updateUIState(false);
@@ -216,6 +233,45 @@ export class ChatView extends ItemView {
             answerEl.createEl('div', { text: 'Searching your notes...', cls: 'loading' });
         } else if (this.currentAnswer) {
             this.renderContent(answerEl, this.currentAnswer);
+            
+            // Show related notes with links
+            if (this.currentRelatedNotes && this.currentRelatedNotes.length > 0) {
+                const notesEl = this.resultArea.createEl('div', { cls: 'related-notes-section' });
+                notesEl.createEl('div', { 
+                    text: `📎 Referenced Notes (${this.currentRelatedNotes.length})`, 
+                    cls: 'related-notes-title'
+                });
+                
+                const notesList = notesEl.createEl('div', { cls: 'related-notes-list' });
+                this.currentRelatedNotes.slice(0, 5).forEach(notePath => { // Show max 5 notes
+                    const noteItem = notesList.createEl('div', { cls: 'related-note-item' });
+                    const noteLink = noteItem.createEl('a', {
+                        text: notePath.replace('.md', ''),
+                        cls: 'related-note-link'
+                    });
+                    
+                    noteLink.addEventListener('click', async (e: Event) => {
+                        e.preventDefault();
+                        const file = this.app.vault.getAbstractFileByPath(notePath);
+                        if (file && 'stat' in file) {
+                            const leaf = this.app.workspace.getLeaf(false);
+                            await leaf.openFile(file as any);
+                        }
+                    });
+                    
+                    // Add small preview icon
+                    const previewIcon = noteItem.createEl('span', { cls: 'note-preview-icon' });
+                    previewIcon.setAttr('data-lucide', 'external-link');
+                });
+                
+                // Show "and X more" if there are more than 5 notes
+                if (this.currentRelatedNotes.length > 5) {
+                    notesList.createEl('div', { 
+                        text: `... and ${this.currentRelatedNotes.length - 5} more`,
+                        cls: 'more-notes-indicator'
+                    });
+                }
+            }
         }
     }
 
