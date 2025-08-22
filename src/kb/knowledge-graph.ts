@@ -294,13 +294,14 @@ export class KnowledgeGraph {
                     relatedNotes
                 };
             } catch (error) {
-                console.error('Semantic search failed, falling back to text search:', error);
+                console.error('Semantic search failed:', error);
+                return { query, results: [], context: '', relatedNotes: [] };
             }
         }
 
-        // Fallback to basic text search when semantic search isn't available
-        console.log('Using fallback text search instead of semantic search');
-        return await this.searchText(query, topK);
+        // Return empty results if semantic search isn't available - let the agent handle intelligent fallback
+        console.log('Semantic search not available - returning empty results for intelligent fallback');
+        return { query, results: [], context: '', relatedNotes: [] };
     }
 
     /**

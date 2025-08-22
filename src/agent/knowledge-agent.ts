@@ -166,6 +166,38 @@ The user has a comprehensive note collection - assume it contains valuable conte
                             const result = await tool.execute(toolCall.args);
                             const duration = Date.now() - startTime;
                             
+                            // Check if semantic search returned no results and try intelligent text search
+                            if (toolCall.toolName === 'semantic_search' && result.found === 0) {
+                                console.log(`  🎯 Semantic search found no results, generating intelligent text search...`);
+                                const textSearchQuery = await this.generateTextSearchQuery(toolCall.args.query);
+                                
+                                if (textSearchQuery && textSearchQuery !== toolCall.args.query) {
+                                    console.log(`  📝 Generated text search query: "${textSearchQuery}"`);
+                                    
+                                    // Execute text search with the intelligent query
+                                    const textSearchTool = this.toolMap.get('text_search');
+                                    if (textSearchTool) {
+                                        try {
+                                            const textSearchResult = await textSearchTool.execute({
+                                                query: textSearchQuery,
+                                                topK: toolCall.args.topK || 5
+                                            });
+                                            
+                                            if (textSearchResult.found > 0) {
+                                                console.log(`  ✨ Intelligent text search found ${textSearchResult.found} results!`);
+                                                // Use the text search results instead
+                                                result.found = textSearchResult.found;
+                                                result.results = textSearchResult.results;
+                                                result.context = textSearchResult.context;
+                                                result.fallback_query = textSearchQuery;
+                                            }
+                                        } catch (textSearchError) {
+                                            console.error(`  ❌ Intelligent text search failed:`, textSearchError);
+                                        }
+                                    }
+                                }
+                            }
+                            
                             toolCalls.push({
                                 toolName: toolCall.toolName,
                                 parameters: toolCall.args,
@@ -712,5 +744,56 @@ Please provide a comprehensive answer to the user's query based on this informat
 
     updateConfig(newConfig: Partial<AgentConfig>): void {
         this.config = { ...this.config, ...newConfig };
+    }
+
+    /**
+     * Generate an intelligent text search query when semantic search fails
+     * Uses the LLM to create more specific search terms based on the original query
+     */
+    private async generateTextSearchQuery(originalQuery: string): Promise<string | null> {
+        try {
+            const prompt = `You are helping to improve search results. A semantic search for "${originalQuery}" found no results.
+
+Your task is to generate a better, more specific text search query that might find relevant notes. Consider:
+
+1. Alternative keywords and synonyms
+2. More specific technical terms
+3. Common abbreviations or acronyms
+4. Related concepts that might be mentioned in notes
+5. Breaking down complex queries into simpler terms
+
+Examples:
+- "machine learning models" → "ML model neural network algorithm"
+- "database migration strategy" → "database migration SQL schema change"
+- "react components" → "React component JSX props state"
+- "project management" → "project plan timeline milestone task"
+
+Generate ONLY the improved search query as a response, no explanation needed.
+
+Original query: "${originalQuery}"
+Improved query:`;
+
+            const response = await this.llmManager.generateResponse(
+                this.config.provider,
+                this.config.model,
+                [{ role: 'user', content: prompt }],
+                { 
+                    temperature: 0.1, // Low temperature for consistent, focused results
+                    maxTokens: 100    // Short response needed
+                }
+            );
+
+            const improvedQuery = response.content?.trim();
+            
+            // Validate the response
+            if (improvedQuery && improvedQuery.length > 0 && improvedQuery !== originalQuery) {
+                return improvedQuery;
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Failed to generate intelligent text search query:', error);
+            return null;
+        }
     }
 }

@@ -109,6 +109,34 @@ export class KnowledgeGraphTools {
                 }
             },
             {
+                name: 'text_search',
+                description: 'Search for exact text matches in note content and titles (fallback when semantic search fails)',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: { type: 'string', description: 'The text to search for' },
+                        topK: { type: 'number', description: 'Number of results to return (default: 5)' }
+                    },
+                    required: ['query']
+                },
+                execute: async (params) => {
+                    const { query, topK = 5 } = params;
+                    const results = await this.knowledgeGraph.searchText(query, topK);
+                    
+                    return {
+                        query,
+                        found: results.results.length,
+                        results: results.results.map(r => ({
+                            title: r.document.title,
+                            path: r.document.path,
+                            score: r.score,
+                            content_preview: r.document.content.substring(0, 200) + '...'
+                        })),
+                        context: results.context
+                    };
+                }
+            },
+            {
                 name: 'search_by_tags',
                 description: 'Find notes that have specific tags',
                 parameters: {
