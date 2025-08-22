@@ -1,8 +1,4 @@
-import { generateText, streamText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createOllama } from 'ollama-ai-provider';
+import { TokenJS, ChatCompletionTool } from 'token.js';
 import { requestUrl } from 'obsidian';
 import { BudgetManager } from '../budget/budget-manager';
 import { BudgetNotifications } from '../budget/budget-notifications';
@@ -25,6 +21,10 @@ export interface LLMResponse {
     };
     provider: string;
     model: string;
+    toolCalls?: Array<{
+        toolName: string;
+        args: any;
+    }>;
 }
 
 export interface LLMProviderConfig {
@@ -39,7 +39,7 @@ export interface LLMProviderConfig {
 export class LLMProviderManager {
     private providers = new Map<string, LLMProvider>();
     private config: LLMProviderConfig;
-    private aiProviders = new Map<string, any>();
+    private tokenjs: TokenJS;
     private budgetManager?: BudgetManager;
     private budgetNotifications?: BudgetNotifications;
 
@@ -47,154 +47,95 @@ export class LLMProviderManager {
         this.config = config;
         this.budgetManager = budgetManager;
         this.budgetNotifications = budgetNotifications;
+        this.tokenjs = new TokenJS();
         this.initializeProviders();
     }
 
     private initializeProviders() {
+        // Set environment variables for Token.js
+        if (this.config.openai?.apiKey) {
+            process.env.OPENAI_API_KEY = this.config.openai.apiKey;
+        }
+        if (this.config.anthropic?.apiKey) {
+            process.env.ANTHROPIC_API_KEY = this.config.anthropic.apiKey;
+        }
+        if (this.config.google?.apiKey) {
+            process.env.GEMINI_API_KEY = this.config.google.apiKey;
+        }
+        if (this.config.groq?.apiKey) {
+            process.env.GROQ_API_KEY = this.config.groq.apiKey;
+        }
+        if (this.config.mistral?.apiKey) {
+            process.env.MISTRAL_API_KEY = this.config.mistral.apiKey;
+        }
+        // Cohere removed - using only Token.js supported providers
+        if (this.config.perplexity?.apiKey) {
+            process.env.PERPLEXITY_API_KEY = this.config.perplexity.apiKey;
+        }
+        if (this.config.openrouter?.apiKey) {
+            process.env.OPENROUTER_API_KEY = this.config.openrouter.apiKey;
+        }
+
         // OpenAI
-        if (this.config.openai?.enabled && this.config.openai.apiKey) {
+        if (this.config.openai?.enabled) {
             this.providers.set('openai', {
                 name: 'OpenAI',
                 models: this.config.openai.models || [
-                    'gpt-5',
-                    'gpt-5-mini',
-                    'gpt-5-nano',
+                    'gpt-4.5-preview',
                     'gpt-4.1',
-                    'gpt-4.1-mini',
-                    'gpt-4.1-nano',
-                    'gpt-4.5',
-                    'o3-mini',
                     'gpt-4o',
-                    'gpt-4o-mini'
+                    'gpt-4o-mini',
+                    'o3-mini',
+                    'o1-mini',
+                    'gpt-4-turbo',
+                    'gpt-3.5-turbo'
                 ],
                 isLocal: false,
                 supportsStreaming: true,
                 enabled: true
             });
-
-            this.aiProviders.set('openai', createOpenAI({
-                apiKey: this.config.openai.apiKey,
-                ...(this.config.openai.baseUrl && { baseURL: this.config.openai.baseUrl }),
-                fetch: async (url, init) => {
-                    const response = await requestUrl({
-                        url: url.toString(),
-                        method: init?.method as any || 'GET',
-                        headers: init?.headers as Record<string, string>,
-                        body: init?.body as string,
-                        throw: false
-                    });
-                    return new Response(response.text, {
-                        status: response.status,
-                        headers: response.headers
-                    });
-                }
-            }));
         }
 
         // Anthropic
-        if (this.config.anthropic?.enabled && this.config.anthropic.apiKey) {
+        if (this.config.anthropic?.enabled) {
             this.providers.set('anthropic', {
                 name: 'Anthropic',
                 models: this.config.anthropic.models || [
-                    'claude-4-opus-4.1',
-                    'claude-4-sonnet',
-                    'claude-3.7-sonnet',
-                    'claude-3-5-sonnet-20241022',
-                    'claude-3-5-haiku-20241022',
-                    'claude-3-opus-20240229'
+                    'claude-3-5-sonnet-latest',
+                    'claude-3-5-haiku-20241022'
                 ],
                 isLocal: false,
                 supportsStreaming: true,
                 enabled: true
             });
-
-            this.aiProviders.set('anthropic', createAnthropic({
-                apiKey: this.config.anthropic.apiKey,
-                ...(this.config.anthropic.baseUrl && { baseURL: this.config.anthropic.baseUrl }),
-                fetch: async (url, init) => {
-                    const response = await requestUrl({
-                        url: url.toString(),
-                        method: init?.method as any || 'GET',
-                        headers: init?.headers as Record<string, string>,
-                        body: init?.body as string,
-                        throw: false
-                    });
-                    return new Response(response.text, {
-                        status: response.status,
-                        headers: response.headers
-                    });
-                }
-            }));
         }
 
-        // Google
-        if (this.config.google?.enabled && this.config.google.apiKey) {
-            this.providers.set('google', {
+        // Google Gemini
+        if (this.config.google?.enabled) {
+            this.providers.set('gemini', {
                 name: 'Google Gemini',
                 models: this.config.google.models || [
-                    'gemini-2.5-pro',
-                    'gemini-2.5-flash',
-                    'gemini-2.5-flash-lite',
-                    'gemini-2.0-flash',
-                    'gemini-2.0-pro',
-                    'gemini-2.0-flash-lite',
-                    'gemini-1.5-pro-latest',
-                    'gemini-1.5-flash-latest'
+                    'gemini-2.0-flash-001',
+                    'gemini-2.0-flash-lite-preview-02-05',
+                    'gemini-1.5-pro',
+                    'gemini-1.5-flash',
+                    'gemini-1.5-flash-8b',
+                    'gemini-1.0-pro'
                 ],
                 isLocal: false,
                 supportsStreaming: true,
                 enabled: true
             });
-
-            this.aiProviders.set('google', createGoogleGenerativeAI({
-                apiKey: this.config.google.apiKey,
-                ...(this.config.google.baseUrl && { baseURL: this.config.google.baseUrl }),
-                fetch: async (url, init) => {
-                    const response = await requestUrl({
-                        url: url.toString(),
-                        method: init?.method as any || 'GET',
-                        headers: init?.headers as Record<string, string>,
-                        body: init?.body as string,
-                        throw: false
-                    });
-                    return new Response(response.text, {
-                        status: response.status,
-                        headers: response.headers
-                    });
-                }
-            }));
-        }
-
-        // Ollama (Local)
-        if (this.config.ollama?.enabled) {
-            this.providers.set('ollama', {
-                name: 'Ollama (Local)',
-                models: this.config.ollama.models || [
-                    'llama3.2',
-                    'llama3.1',
-                    'llama2',
-                    'codellama',
-                    'mistral',
-                    'mixtral',
-                    'qwen2.5'
-                ],
-                isLocal: true,
-                supportsStreaming: true,
-                enabled: true
-            });
-
-            this.aiProviders.set('ollama', createOllama({
-                baseURL: this.config.ollama.baseUrl || 'http://localhost:11434'
-            }));
         }
 
         // Groq
-        if (this.config.groq?.enabled && this.config.groq.apiKey) {
+        if (this.config.groq?.enabled) {
             this.providers.set('groq', {
                 name: 'Groq',
                 models: this.config.groq.models || [
-                    'llama-3.1-70b-versatile',
+                    'llama-3.3-70b-versatile',
                     'llama-3.1-8b-instant',
+                    'llama3-70b-8192',
                     'mixtral-8x7b-32768',
                     'gemma2-9b-it'
                 ],
@@ -204,19 +145,76 @@ export class LLMProviderManager {
             });
         }
 
-        // Together
-        if (this.config.together?.enabled && this.config.together.apiKey) {
-            this.providers.set('together', {
-                name: 'Together AI',
-                models: this.config.together.models || [
-                    'meta-llama/Llama-3-70b-chat-hf',
-                    'meta-llama/Llama-3-8b-chat-hf',
-                    'mistralai/Mixtral-8x7B-Instruct-v0.1',
-                    'NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO'
+        // Mistral
+        if (this.config.mistral?.enabled) {
+            this.providers.set('mistral', {
+                name: 'Mistral',
+                models: this.config.mistral.models || [
+                    'mistral-large-latest',
+                    'mistral-large-2402',
+                    'open-mixtral-8x22b',
+                    'open-mixtral-8x7b',
+                    'codestral-latest'
                 ],
                 isLocal: false,
                 supportsStreaming: true,
                 enabled: true
+            });
+        }
+
+        // Cohere removed - causing bundling issues with process/ module
+
+        // Perplexity
+        if (this.config.perplexity?.enabled) {
+            this.providers.set('perplexity', {
+                name: 'Perplexity',
+                models: this.config.perplexity.models || [
+                    'llama-3.1-sonar-large-128k-online',
+                    'llama-3.1-sonar-small-128k-online',
+                    'llama-3.1-sonar-huge-128k-online'
+                ],
+                isLocal: false,
+                supportsStreaming: true,
+                enabled: true
+            });
+        }
+
+        // OpenRouter
+        if (this.config.openrouter?.enabled) {
+            this.providers.set('openrouter', {
+                name: 'OpenRouter',
+                models: this.config.openrouter.models || [
+                    'anthropic/claude-3.5-sonnet',
+                    'openai/gpt-4-turbo',
+                    'meta-llama/llama-3.1-70b-instruct',
+                    'google/gemini-pro-1.5'
+                ],
+                isLocal: false,
+                supportsStreaming: true,
+                enabled: true
+            });
+        }
+
+        // Ollama (Local) - OpenAI Compatible
+        if (this.config.ollama?.enabled) {
+            this.providers.set('ollama', {
+                name: 'Ollama (Local)',
+                models: this.config.ollama.models || [
+                    'llama3.2',
+                    'llama3.1',
+                    'codellama',
+                    'mistral',
+                    'mixtral',
+                    'qwen2.5'
+                ],
+                isLocal: true,
+                supportsStreaming: true,
+                enabled: true
+            });
+            
+            // Configure Token.js for Ollama
+            this.tokenjs = new TokenJS({
+                baseURL: this.config.ollama.baseUrl || 'http://localhost:11434/v1/'
             });
         }
     }
@@ -254,25 +252,30 @@ export class LLMProviderManager {
                 throw new Error(`Budget exceeded. Current spend: $${status.currentSpend.toFixed(2)}/${status.monthlyLimit.toFixed(2)}`);
             }
         }
-        const aiProvider = this.aiProviders.get(provider);
-        if (!aiProvider) {
+        
+        const providerConfig = this.providers.get(provider);
+        if (!providerConfig?.enabled) {
             throw new Error(`Provider ${provider} not configured or not supported`);
         }
 
         try {
-            // Use the pre-configured provider
-
-            const result = await generateText({
-                model: aiProvider(model),
-                messages: messages as any,
-                maxTokens: options.maxTokens || 1000,
+            // Use Token.js for unified provider access
+            const tokenjsProvider = provider === 'google' ? 'gemini' : provider;
+            const result = await this.tokenjs.chat.completions.create({
+                provider: tokenjsProvider as any,
+                model,
+                messages: messages.map(m => ({
+                    role: m.role as 'user' | 'assistant' | 'system',
+                    content: m.content
+                })),
+                max_tokens: options.maxTokens || 1000,
                 temperature: options.temperature || 0.7,
             });
 
             const usage = result.usage ? {
-                inputTokens: result.usage.promptTokens,
-                outputTokens: result.usage.completionTokens,
-                totalTokens: result.usage.totalTokens,
+                inputTokens: result.usage.prompt_tokens,
+                outputTokens: result.usage.completion_tokens,
+                totalTokens: result.usage.total_tokens,
                 cost: this.calculateCost(provider, model, result.usage)
             } : undefined;
 
@@ -296,7 +299,7 @@ export class LLMProviderManager {
             }
 
             return {
-                content: result.text,
+                content: result.choices[0]?.message?.content || '',
                 usage,
                 provider,
                 model
@@ -310,6 +313,122 @@ export class LLMProviderManager {
         }
     }
 
+    async generateResponseWithTools(
+        provider: string,
+        model: string,
+        messages: Array<{ role: string; content: string }>,
+        tools: Array<{
+            name: string;
+            description: string;
+            parameters: any;
+        }>,
+        options: {
+            maxTokens?: number;
+            temperature?: number;
+        } = {}
+    ): Promise<LLMResponse> {
+        // Check budget before making request
+        if (this.budgetManager) {
+            const estimatedCost = this.estimateRequestCost(provider, model, messages, options.maxTokens);
+            if (!this.budgetManager.canAffordRequest(estimatedCost)) {
+                const status = this.budgetManager.getBudgetStatus();
+                throw new Error(`Budget exceeded. Current spend: $${status.currentSpend.toFixed(2)}/${status.monthlyLimit.toFixed(2)}`);
+            }
+        }
+
+        const providerConfig = this.providers.get(provider);
+        if (!providerConfig?.enabled) {
+            throw new Error(`Provider ${provider} not configured or not supported`);
+        }
+
+        try {
+            // Convert tools to OpenAI function calling format for Token.js
+            const aiTools: ChatCompletionTool[] = tools.map(tool => ({
+                type: 'function' as const,
+                function: {
+                    name: tool.name,
+                    description: tool.description,
+                    parameters: tool.parameters
+                }
+            }));
+            
+            console.log(`🤖 [${provider}/${model}] Generating response with ${tools.length} tools available:`);
+            tools.forEach(tool => {
+                console.log(`  📋 Tool: ${tool.name} - ${tool.description}`);
+            });
+            
+            console.log(`💬 Messages sent to LLM:`, messages.map(m => ({ role: m.role, content: m.content.substring(0, 100) + '...' })));
+            console.log(`⚙️ Request options:`, { maxTokens: options.maxTokens || 1000, temperature: options.temperature || 0.7 });
+
+            const tokenjsProvider = provider === 'google' ? 'gemini' : provider;
+            const result = await this.tokenjs.chat.completions.create({
+                provider: tokenjsProvider as any,
+                model,
+                messages: messages.map(m => ({
+                    role: m.role as 'user' | 'assistant' | 'system',
+                    content: m.content
+                })),
+                tools: aiTools,
+                tool_choice: 'auto',
+                max_tokens: options.maxTokens || 1000,
+                temperature: options.temperature || 0.7,
+            });
+            
+            console.log(`✅ LLM response received from ${provider}:`);
+            console.log(`📝 Content length:`, result.choices[0]?.message?.content?.length || 0, 'characters');
+            console.log(`🔧 Tool calls received:`, result.choices[0]?.message?.tool_calls?.length || 0);
+            if (result.choices[0]?.message?.tool_calls && result.choices[0].message.tool_calls.length > 0) {
+                result.choices[0].message.tool_calls.forEach((call, index) => {
+                    console.log(`  🛠️ Tool ${index + 1}: ${call.function?.name}`, call.function?.arguments);
+                });
+            }
+
+            const usage = result.usage ? {
+                inputTokens: result.usage.prompt_tokens,
+                outputTokens: result.usage.completion_tokens,
+                totalTokens: result.usage.total_tokens,
+                cost: this.calculateCost(provider, model, result.usage)
+            } : undefined;
+
+            // Record usage in budget manager
+            if (this.budgetManager && usage) {
+                this.budgetManager.recordUsage({
+                    provider,
+                    model,
+                    cost: usage.cost || 0,
+                    inputTokens: usage.inputTokens,
+                    outputTokens: usage.outputTokens,
+                    totalTokens: usage.totalTokens
+                });
+
+                // Check budget status and show notifications
+                if (this.budgetNotifications) {
+                    const status = this.budgetManager.getBudgetStatus();
+                    this.budgetNotifications.checkAndNotify(status);
+                    this.budgetNotifications.showCostNotification(usage.cost || 0, provider, model);
+                }
+            }
+
+            // Extract tool calls if any
+            const toolCalls = result.choices[0]?.message?.tool_calls ? 
+                result.choices[0].message.tool_calls.map(call => ({
+                    toolName: call.function?.name || '',
+                    args: call.function?.arguments ? JSON.parse(call.function.arguments) : {}
+                })) : undefined;
+
+            return {
+                content: result.choices[0]?.message?.content || '',
+                usage,
+                provider,
+                model,
+                toolCalls
+            };
+        } catch (error) {
+            console.error(`Error generating response with tools for ${provider}:`, error);
+            throw new Error(`Failed to generate response: ${(error as Error).message}`);
+        }
+    }
+
     async *generateStreamingResponse(
         provider: string,
         model: string,
@@ -319,75 +438,79 @@ export class LLMProviderManager {
             temperature?: number;
         } = {}
     ) {
-        const aiProvider = this.aiProviders.get(provider);
-        if (!aiProvider) {
+        const providerConfig = this.providers.get(provider);
+        if (!providerConfig?.enabled) {
             throw new Error(`Provider ${provider} not configured or not supported`);
         }
 
-        const result = await streamText({
-            model: aiProvider(model),
-            messages: messages as any,
-            maxTokens: options.maxTokens || 1000,
+        const tokenjsProvider = provider === 'google' ? 'gemini' : provider;
+        const result = await this.tokenjs.chat.completions.create({
+            provider: tokenjsProvider as any,
+            model,
+            messages: messages.map(m => ({
+                role: m.role as 'user' | 'assistant' | 'system',
+                content: m.content
+            })),
+            max_tokens: options.maxTokens || 1000,
             temperature: options.temperature || 0.7,
-        });
+            stream: true
+        }) as any;
 
-        for await (const delta of result.textStream) {
-            yield delta;
-        }
-
-        const finalUsage = await result.usage;
-        if (finalUsage) {
-            return {
-                usage: {
-                    inputTokens: finalUsage.promptTokens,
-                    outputTokens: finalUsage.completionTokens,
-                    totalTokens: finalUsage.totalTokens,
-                    cost: this.calculateCost(provider, model, finalUsage)
-                },
-                provider,
-                model
-            };
+        for await (const chunk of result) {
+            const content = chunk.choices?.[0]?.delta?.content;
+            if (content) {
+                yield content;
+            }
         }
     }
 
     private calculateCost(provider: string, model: string, usage: any): number {
-        // Simplified cost calculation - you can make this more detailed
+        // Updated cost calculation with Token.js usage format
         const costPer1kTokens: { [key: string]: { [model: string]: { input: number; output: number } } } = {
             openai: {
-                'gpt-5': { input: 0.01, output: 0.03 },
-                'gpt-5-mini': { input: 0.002, output: 0.008 },
-                'gpt-5-nano': { input: 0.0005, output: 0.002 },
+                'gpt-4.5-preview': { input: 0.01, output: 0.03 },
                 'gpt-4.1': { input: 0.008, output: 0.025 },
-                'gpt-4.1-mini': { input: 0.001, output: 0.004 },
-                'gpt-4.1-nano': { input: 0.0003, output: 0.001 },
-                'gpt-4.5': { input: 0.006, output: 0.02 },
-                'o3-mini': { input: 0.004, output: 0.016 },
                 'gpt-4o': { input: 0.005, output: 0.015 },
-                'gpt-4o-mini': { input: 0.00015, output: 0.0006 }
+                'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
+                'o3-mini': { input: 0.004, output: 0.016 },
+                'o1-mini': { input: 0.003, output: 0.012 },
+                'gpt-4-turbo': { input: 0.01, output: 0.03 },
+                'gpt-3.5-turbo': { input: 0.0005, output: 0.0015 }
             },
             anthropic: {
-                'claude-4-opus-4.1': { input: 0.015, output: 0.075 },
-                'claude-4-sonnet': { input: 0.003, output: 0.015 },
-                'claude-3.7-sonnet': { input: 0.003, output: 0.015 },
-                'claude-3-5-sonnet-20241022': { input: 0.003, output: 0.015 },
-                'claude-3-5-haiku-20241022': { input: 0.00025, output: 0.00125 },
-                'claude-3-opus-20240229': { input: 0.015, output: 0.075 }
+                'claude-3-5-sonnet-latest': { input: 0.003, output: 0.015 },
+                'claude-3-5-haiku-20241022': { input: 0.00025, output: 0.00125 }
             },
-            google: {
-                'gemini-2.5-pro': { input: 0.004, output: 0.012 },
-                'gemini-2.5-flash': { input: 0.0001, output: 0.0004 },
-                'gemini-2.5-flash-lite': { input: 0.00005, output: 0.0002 },
-                'gemini-2.0-flash': { input: 0.0002, output: 0.0008 },
-                'gemini-2.0-pro': { input: 0.005, output: 0.015 },
-                'gemini-2.0-flash-lite': { input: 0.00005, output: 0.0002 },
-                'gemini-1.5-pro-latest': { input: 0.0035, output: 0.0105 },
-                'gemini-1.5-flash-latest': { input: 0.000075, output: 0.0003 }
+            gemini: {
+                'gemini-2.0-flash-001': { input: 0.0001, output: 0.0004 },
+                'gemini-2.0-flash-lite-preview-02-05': { input: 0.00005, output: 0.0002 },
+                'gemini-1.5-pro': { input: 0.0035, output: 0.0105 },
+                'gemini-1.5-flash': { input: 0.000075, output: 0.0003 },
+                'gemini-1.5-flash-8b': { input: 0.0000375, output: 0.00015 },
+                'gemini-1.0-pro': { input: 0.0005, output: 0.0015 }
             },
-            ollama: {},  // Local models are free
             groq: {
-                'llama-3.1-70b-versatile': { input: 0.00059, output: 0.00079 },
-                'llama-3.1-8b-instant': { input: 0.00005, output: 0.00008 }
-            }
+                'llama-3.3-70b-versatile': { input: 0.00059, output: 0.00079 },
+                'llama-3.1-8b-instant': { input: 0.00005, output: 0.00008 },
+                'llama3-70b-8192': { input: 0.00059, output: 0.00079 },
+                'mixtral-8x7b-32768': { input: 0.00024, output: 0.00024 },
+                'gemma2-9b-it': { input: 0.00002, output: 0.00002 }
+            },
+            mistral: {
+                'mistral-large-latest': { input: 0.004, output: 0.012 },
+                'mistral-large-2402': { input: 0.004, output: 0.012 },
+                'open-mixtral-8x22b': { input: 0.0006, output: 0.0006 },
+                'open-mixtral-8x7b': { input: 0.0007, output: 0.0007 },
+                'codestral-latest': { input: 0.001, output: 0.003 }
+            },
+            // cohere removed - causing bundling issues
+            perplexity: {
+                'llama-3.1-sonar-large-128k-online': { input: 0.001, output: 0.001 },
+                'llama-3.1-sonar-small-128k-online': { input: 0.0002, output: 0.0002 },
+                'llama-3.1-sonar-huge-128k-online': { input: 0.005, output: 0.005 }
+            },
+            openrouter: {},  // Variable pricing
+            ollama: {}  // Local models are free
         };
 
         const providerPricing = costPer1kTokens[provider];
@@ -396,8 +519,10 @@ export class LLMProviderManager {
         }
 
         const modelPricing = providerPricing[model];
-        const inputCost = (usage.promptTokens / 1000) * modelPricing.input;
-        const outputCost = (usage.completionTokens / 1000) * modelPricing.output;
+        const inputTokens = usage.prompt_tokens || usage.promptTokens || 0;
+        const outputTokens = usage.completion_tokens || usage.completionTokens || 0;
+        const inputCost = (inputTokens / 1000) * modelPricing.input;
+        const outputCost = (outputTokens / 1000) * modelPricing.output;
         
         return inputCost + outputCost;
     }
@@ -405,7 +530,6 @@ export class LLMProviderManager {
     updateConfig(newConfig: LLMProviderConfig) {
         this.config = { ...this.config, ...newConfig };
         this.providers.clear();
-        this.aiProviders.clear();
         this.initializeProviders();
     }
 
@@ -415,7 +539,7 @@ export class LLMProviderManager {
         for (const [name, provider] of this.providers) {
             status[name] = {
                 enabled: provider.enabled,
-                configured: this.aiProviders.has(name),
+                configured: true, // Token.js handles configuration
                 models: provider.models.length
             };
         }
@@ -430,9 +554,9 @@ export class LLMProviderManager {
         const estimatedOutputTokens = Math.min(maxTokens, 500); // Conservative estimate
         
         return this.calculateCost(provider, model, {
-            promptTokens: estimatedInputTokens,
-            completionTokens: estimatedOutputTokens,
-            totalTokens: estimatedInputTokens + estimatedOutputTokens
+            prompt_tokens: estimatedInputTokens,
+            completion_tokens: estimatedOutputTokens,
+            total_tokens: estimatedInputTokens + estimatedOutputTokens
         });
     }
 

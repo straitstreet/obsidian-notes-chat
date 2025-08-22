@@ -3,6 +3,8 @@ export interface EmbeddingConfig {
     batchSize: number;
     maxTokens: number;
     enabled: boolean;
+    provider: 'ollama' | 'openai' | 'transformers';
+    baseUrl?: string;
 }
 
 export interface DocumentEmbedding {
@@ -29,7 +31,6 @@ export interface EmbeddingSearchResult {
 export class EmbeddingManager {
     private config: EmbeddingConfig;
     private isInitialized = false;
-    private pipeline: any = null;
 
     constructor(config: EmbeddingConfig) {
         this.config = config;
@@ -39,163 +40,237 @@ export class EmbeddingManager {
         if (this.isInitialized || !this.config.enabled) return;
 
         try {
-            // Dynamic import to avoid bundling when not needed
-            const { pipeline } = await import('@xenova/transformers');
+            console.log(`Initializing embedding provider: ${this.config.provider}`);
             
-            // Initialize the sentence transformer pipeline
-            this.pipeline = await pipeline(
-                'feature-extraction',
-                this.config.modelName,
-                { 
-                    quantized: true,
-                    progress_callback: (progress: any) => {
-                        console.log('Loading embedding model:', progress);
-                    }
-                }
-            );
+            if (this.config.provider === 'ollama') {
+                await this.initializeOllama();
+            } else if (this.config.provider === 'openai') {
+                await this.initializeOpenAI();
+            } else {
+                throw new Error(`Unsupported embedding provider: ${this.config.provider}`);
+            }
             
             this.isInitialized = true;
-            console.log('Embedding model initialized successfully');
+            console.log('Embedding provider initialized successfully');
+            
         } catch (error) {
-            console.error('Failed to initialize embedding model:', error);
+            console.error('Failed to initialize embedding provider:', error);
+            console.warn('🔍 Embeddings disabled - knowledge graph will use text search fallback');
+            
+            // Don't throw error, just disable embeddings gracefully
+            this.config.enabled = false;
+            this.isInitialized = false;
+        }
+    }
+
+    private async initializeOllama(): Promise<void> {
+        const baseUrl = this.config.baseUrl || 'http://localhost:11434';
+        
+        try {
+            // Test connection to Ollama
+            const response = await fetch(`${baseUrl}/api/tags`);
+            if (!response.ok) {
+                throw new Error(`Ollama not available at ${baseUrl}`);
+            }
+            
+            const data = await response.json();
+            const availableModels = data.models?.map((m: any) => m.name) || [];
+            
+            // Check if our embedding model is available
+            const modelExists = availableModels.some((name: string) => 
+                name.includes(this.config.modelName) || name === this.config.modelName
+            );
+            
+            if (!modelExists) {
+                console.warn(`Model ${this.config.modelName} not found. Available models:`, availableModels);
+                console.warn('Pulling embedding model... This may take a few minutes.');
+                
+                // Try to pull the model
+                await this.pullOllamaModel();
+            }
+            
+            // Test embedding generation
+            console.log('Testing Ollama embedding generation...');
+            const testEmbedding = await this.generateEmbedding('test text');
+            if (!testEmbedding || testEmbedding.length === 0) {
+                throw new Error('Test embedding generation failed');
+            }
+            
+            console.log(`Ollama embedding test successful: ${testEmbedding.length} dimensions`);
+            
+        } catch (error) {
+            throw new Error(`Ollama initialization failed: ${(error as Error).message}`);
+        }
+    }
+
+    private async initializeOpenAI(): Promise<void> {
+        // TODO: Implement OpenAI embeddings if needed
+        throw new Error('OpenAI embeddings not implemented yet');
+    }
+
+    private async pullOllamaModel(): Promise<void> {
+        const baseUrl = this.config.baseUrl || 'http://localhost:11434';
+        
+        try {
+            const response = await fetch(`${baseUrl}/api/pull`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: this.config.modelName })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to pull model: ${response.statusText}`);
+            }
+            
+            console.log(`Successfully pulled model: ${this.config.modelName}`);
+        } catch (error) {
+            console.error(`Failed to pull model ${this.config.modelName}:`, error);
             throw error;
         }
     }
 
     async generateEmbedding(text: string): Promise<number[]> {
-        if (!this.isInitialized) {
-            await this.initialize();
-        }
-
-        if (!this.pipeline) {
-            throw new Error('Embedding model not initialized');
+        if (!this.isInitialized || !this.config.enabled) {
+            throw new Error('Embedding manager not initialized');
         }
 
         try {
-            // Truncate text to max tokens (approximate)
-            const truncatedText = this.truncateText(text, this.config.maxTokens);
-            
-            // Generate embedding
-            const output = await this.pipeline(truncatedText, {
-                pooling: 'mean',
-                normalize: true
-            });
-
-            // Convert tensor to array
-            return Array.from(output.data);
+            if (this.config.provider === 'ollama') {
+                return await this.generateOllamaEmbedding(text);
+            } else if (this.config.provider === 'openai') {
+                return await this.generateOpenAIEmbedding(text);
+            } else {
+                throw new Error(`Unsupported provider: ${this.config.provider}`);
+            }
         } catch (error) {
             console.error('Failed to generate embedding:', error);
             throw error;
         }
     }
 
-    async generateEmbeddings(texts: string[]): Promise<number[][]> {
-        if (!this.isInitialized) {
-            await this.initialize();
-        }
-
-        const embeddings: number[][] = [];
+    private async generateOllamaEmbedding(text: string): Promise<number[]> {
+        const baseUrl = this.config.baseUrl || 'http://localhost:11434';
         
-        // Process in batches to avoid memory issues
-        for (let i = 0; i < texts.length; i += this.config.batchSize) {
-            const batch = texts.slice(i, i + this.config.batchSize);
-            const batchEmbeddings = await Promise.all(
-                batch.map(text => this.generateEmbedding(text))
-            );
-            embeddings.push(...batchEmbeddings);
-        }
-
-        return embeddings;
-    }
-
-    calculateCosineSimilarity(embedding1: number[], embedding2: number[]): number {
-        if (embedding1.length !== embedding2.length) {
-            throw new Error('Embeddings must have the same dimensions');
-        }
-
-        let dotProduct = 0;
-        let norm1 = 0;
-        let norm2 = 0;
-
-        for (let i = 0; i < embedding1.length; i++) {
-            dotProduct += embedding1[i] * embedding2[i];
-            norm1 += embedding1[i] * embedding1[i];
-            norm2 += embedding2[i] * embedding2[i];
-        }
-
-        norm1 = Math.sqrt(norm1);
-        norm2 = Math.sqrt(norm2);
-
-        if (norm1 === 0 || norm2 === 0) {
-            return 0;
-        }
-
-        return dotProduct / (norm1 * norm2);
-    }
-
-    findMostSimilar(
-        queryEmbedding: number[], 
-        documents: DocumentEmbedding[], 
-        topK = 10,
-        threshold = 0.5
-    ): EmbeddingSearchResult[] {
-        const results: EmbeddingSearchResult[] = [];
-
-        for (const doc of documents) {
-            const similarity = this.calculateCosineSimilarity(queryEmbedding, doc.embedding);
+        try {
+            const response = await fetch(`${baseUrl}/api/embeddings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: this.config.modelName,
+                    prompt: text.substring(0, this.config.maxTokens * 4) // Rough token limit
+                })
+            });
             
-            if (similarity >= threshold) {
-                results.push({
-                    document: doc,
-                    similarity,
-                    score: similarity
-                });
+            if (!response.ok) {
+                throw new Error(`Ollama embedding request failed: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            
+            if (!data.embedding || !Array.isArray(data.embedding)) {
+                throw new Error('Invalid embedding response from Ollama');
+            }
+            
+            return data.embedding;
+            
+        } catch (error) {
+            console.error('Ollama embedding generation failed:', error);
+            throw error;
+        }
+    }
+
+    private async generateOpenAIEmbedding(text: string): Promise<number[]> {
+        // TODO: Implement OpenAI embedding generation
+        throw new Error('OpenAI embeddings not implemented yet');
+    }
+
+    async generateEmbeddings(texts: string[]): Promise<number[][]> {
+        if (!this.isInitialized || !this.config.enabled) {
+            throw new Error('Embedding manager not initialized');
+        }
+
+        const results: number[][] = [];
+        const batchSize = this.config.batchSize;
+
+        for (let i = 0; i < texts.length; i += batchSize) {
+            const batch = texts.slice(i, i + batchSize);
+            const batchPromises = batch.map(text => this.generateEmbedding(text));
+            
+            try {
+                const batchResults = await Promise.all(batchPromises);
+                results.push(...batchResults);
+                
+                // Small delay between batches to avoid overwhelming the service
+                if (i + batchSize < texts.length) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            } catch (error) {
+                console.error(`Batch embedding failed for batch starting at ${i}:`, error);
+                throw error;
             }
         }
 
-        // Sort by similarity descending
-        results.sort((a, b) => b.similarity - a.similarity);
-        
-        return results.slice(0, topK);
+        return results;
     }
 
-    private truncateText(text: string, maxTokens: number): string {
-        // Rough approximation: 1 token ≈ 4 characters
-        const maxChars = maxTokens * 4;
-        
-        if (text.length <= maxChars) {
-            return text;
+    cosineSimilarity(a: number[], b: number[]): number {
+        if (a.length !== b.length) {
+            throw new Error('Vectors must have the same length');
         }
 
-        // Try to truncate at word boundaries
-        const truncated = text.substring(0, maxChars);
-        const lastSpaceIndex = truncated.lastIndexOf(' ');
-        
-        return lastSpaceIndex > maxChars * 0.8 
-            ? truncated.substring(0, lastSpaceIndex) 
-            : truncated;
+        let dotProduct = 0;
+        let normA = 0;
+        let normB = 0;
+
+        for (let i = 0; i < a.length; i++) {
+            dotProduct += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+
+        const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
+        return magnitude === 0 ? 0 : dotProduct / magnitude;
     }
 
-    updateConfig(newConfig: Partial<EmbeddingConfig>): void {
-        const oldEnabled = this.config.enabled;
-        this.config = { ...this.config, ...newConfig };
-        
-        // If embedding was disabled and now enabled, reset initialization
-        if (!oldEnabled && this.config.enabled) {
-            this.isInitialized = false;
-            this.pipeline = null;
-        }
+    findSimilarEmbeddings(queryEmbedding: number[], embeddings: DocumentEmbedding[], topK: number = 5): EmbeddingSearchResult[] {
+        const similarities = embeddings.map(doc => ({
+            document: doc,
+            similarity: this.cosineSimilarity(queryEmbedding, doc.embedding),
+            score: this.cosineSimilarity(queryEmbedding, doc.embedding)
+        }));
+
+        return similarities
+            .sort((a, b) => b.similarity - a.similarity)
+            .slice(0, topK);
+    }
+
+    findMostSimilar(queryEmbedding: number[], embeddings: DocumentEmbedding[], topK: number = 5, threshold: number = 0.1): EmbeddingSearchResult[] {
+        const similarities = embeddings.map(doc => ({
+            document: doc,
+            similarity: this.cosineSimilarity(queryEmbedding, doc.embedding),
+            score: this.cosineSimilarity(queryEmbedding, doc.embedding)
+        }));
+
+        return similarities
+            .filter(result => result.similarity >= threshold)
+            .sort((a, b) => b.similarity - a.similarity)
+            .slice(0, topK);
     }
 
     isReady(): boolean {
-        return this.isInitialized && this.pipeline !== null;
+        return this.isInitialized && this.config.enabled;
     }
 
-    getModelInfo(): { modelName: string; isReady: boolean; batchSize: number } {
-        return {
-            modelName: this.config.modelName,
-            isReady: this.isReady(),
-            batchSize: this.config.batchSize
-        };
+    getConfig(): EmbeddingConfig {
+        return { ...this.config };
+    }
+
+    updateConfig(newConfig: Partial<EmbeddingConfig>) {
+        this.config = { ...this.config, ...newConfig };
+        
+        // If critical settings changed, reinitialize
+        if (newConfig.provider || newConfig.modelName || newConfig.baseUrl) {
+            this.isInitialized = false;
+        }
     }
 }

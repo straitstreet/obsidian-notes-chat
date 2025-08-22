@@ -22,6 +22,8 @@ export interface DocumentNode {
     tags: string[];
     created: number;
     modified: number;
+    size: number; // For change detection
+    contentHash: string; // For change detection
 }
 
 export interface GraphConnection {
@@ -74,20 +76,69 @@ export class KnowledgeGraph {
         if (!this.config.enabled) return;
 
         try {
+            console.log('Initializing knowledge graph...');
+            
+            // Try to initialize embeddings (this won't throw anymore)
             await this.embeddingManager.initialize();
             
-            // Initial indexing if no data exists or embeddings are missing
-            if (this.documents.size === 0 || this.embeddings.size === 0) {
+            const embeddingsReady = this.embeddingManager.isReady();
+            if (embeddingsReady) {
+                console.log('Embeddings ready - using semantic search capabilities');
+            } else {
+                console.log('Embeddings not available - using text search only');
+            }
+            
+            // Initial indexing if no data exists
+            if (this.documents.size === 0 || (embeddingsReady && this.embeddings.size === 0)) {
                 console.log(`Building initial index: ${this.documents.size} documents, ${this.embeddings.size} embeddings`);
-                await this.buildIndex();
+                if (embeddingsReady) {
+                    await this.buildIndex(); // Full index with embeddings
+                } else {
+                    await this.buildBasicIndex(); // Text-only index
+                }
             } else {
                 console.log(`Using cached index: ${this.documents.size} documents, ${this.embeddings.size} embeddings`);
             }
             
-            console.log('Knowledge graph initialized successfully');
+            console.log(`Knowledge graph initialized successfully (${embeddingsReady ? 'with semantic search' : 'text search only'})`);
+            
         } catch (error) {
             console.error('Failed to initialize knowledge graph:', error);
-            throw error;
+            console.warn('Knowledge graph will run in basic text-only mode');
+            
+            // Fall back to basic functionality
+            if (this.documents.size === 0) {
+                try {
+                    await this.buildBasicIndex();
+                    console.log('Basic knowledge graph ready');
+                } catch (basicError) {
+                    console.error('Failed to build even basic index:', basicError);
+                }
+            }
+        }
+    }
+    
+    // Fallback method that builds index without embeddings
+    private async buildBasicIndex(): Promise<void> {
+        console.log('Building basic index without embeddings...');
+        
+        try {
+            const files = this.vault.getMarkdownFiles();
+            let processedCount = 0;
+            
+            for (const file of files) {
+                if (this.shouldIncludeFile(file)) {
+                    const content = await this.vault.read(file);
+                    const node = await this.createDocumentNode(file, content);
+                    this.documents.set(file.path, node);
+                    processedCount++;
+                }
+            }
+            
+            console.log(`Basic index built successfully: ${processedCount} documents (text search only)`);
+            this.persistData();
+        } catch (error) {
+            console.error('Failed to build basic index:', error);
         }
     }
 
@@ -157,7 +208,9 @@ export class KnowledgeGraph {
                     inlinks: [],
                     tags: this.extractTags(metadata),
                     created: file.stat.ctime,
-                    modified: file.stat.mtime
+                    modified: file.stat.mtime,
+                    size: file.stat.size,
+                    contentHash: await this.generateContentHash(content)
                 };
 
                 documents.push(doc);
@@ -200,7 +253,7 @@ export class KnowledgeGraph {
     }
 
     async searchSemantic(query: string, topK = 10, threshold = 0.5): Promise<SearchContext> {
-        if (!this.config.enabled || !this.embeddingManager.isReady()) {
+        if (!this.config.enabled) {
             return {
                 query,
                 results: [],
@@ -209,42 +262,121 @@ export class KnowledgeGraph {
             };
         }
 
-        try {
-            // Generate query embedding
-            const queryEmbedding = await this.embeddingManager.generateEmbedding(query);
+        // Try semantic search first if embeddings are available
+        if (this.embeddingManager.isReady() && this.embeddings.size > 0) {
+            try {
+                console.log('Using semantic search with embeddings');
+                
+                // Generate query embedding
+                const queryEmbedding = await this.embeddingManager.generateEmbedding(query);
+                
+                // Find similar documents
+                const allEmbeddings = Array.from(this.embeddings.values());
+                const results = this.embeddingManager.findMostSimilar(
+                    queryEmbedding, 
+                    allEmbeddings, 
+                    topK, 
+                    threshold
+                );
+
+                // Build context from top results
+                const context = results
+                    .slice(0, 3)
+                    .map((result: any) => `**${result.document.title}**:\n${result.document.content.substring(0, 300)}...`)
+                    .join('\n\n');
+
+                const relatedNotes = results.map((result: any) => result.document.path);
+
+                return {
+                    query,
+                    results,
+                    context,
+                    relatedNotes
+                };
+            } catch (error) {
+                console.error('Semantic search failed, falling back to text search:', error);
+            }
+        }
+
+        // Fallback to basic text search when semantic search isn't available
+        console.log('Using fallback text search instead of semantic search');
+        return await this.searchText(query, topK);
+    }
+
+    /**
+     * Text-based search fallback when semantic search isn't available
+     */
+    async searchText(query: string, maxResults = 10): Promise<SearchContext> {
+        if (!this.config.enabled) {
+            return { query, results: [], context: '', relatedNotes: [] };
+        }
+
+        const results: Array<{ document: any; similarity: number; score: number }> = [];
+        const searchQuery = query.toLowerCase();
+        
+        for (const [, doc] of this.documents) {
+            const content = doc.content.toLowerCase();
+            const matches: Array<{ context: string; position: number }> = [];
             
-            // Find similar documents
-            const allEmbeddings = Array.from(this.embeddings.values());
-            const results = this.embeddingManager.findMostSimilar(
-                queryEmbedding, 
-                allEmbeddings, 
-                topK, 
-                threshold
-            );
-
-            // Build context from top results
-            const context = results
-                .slice(0, 3)
-                .map(result => `**${result.document.title}**:\n${result.document.content.substring(0, 300)}...`)
-                .join('\n\n');
-
-            const relatedNotes = results.map(result => result.document.path);
-
-            return {
-                query,
-                results,
-                context,
-                relatedNotes
-            };
-        } catch (error) {
-            console.error('Semantic search failed:', error);
-            return {
-                query,
-                results: [],
-                context: '',
-                relatedNotes: []
-            };
+            let position = content.indexOf(searchQuery, 0);
+            while (position !== -1 && matches.length < 3) { // Max 3 matches per document
+                const contextStart = Math.max(0, position - 100);
+                const contextEnd = Math.min(content.length, position + searchQuery.length + 100);
+                const context = doc.content.substring(contextStart, contextEnd);
+                
+                matches.push({
+                    context: contextStart > 0 ? '...' + context : context,
+                    position
+                });
+                
+                position = content.indexOf(searchQuery, position + 1);
+            }
+            
+            if (matches.length > 0) {
+                // Create mock embedding result for consistency
+                results.push({
+                    document: {
+                        id: doc.id,
+                        path: doc.path,
+                        title: doc.title,
+                        content: matches[0].context, // Use first match context
+                        embedding: [],
+                        metadata: {
+                            created: doc.created,
+                            modified: doc.modified,
+                            size: doc.size,
+                            tags: doc.tags,
+                            links: doc.outlinks
+                        }
+                    },
+                    similarity: matches.length * 0.1, // Simple scoring based on match count
+                    score: matches.length
+                });
+            }
         }
+        
+        // Sort by number of matches, then by recency
+        results.sort((a, b) => {
+            if (a.score !== b.score) {
+                return b.score - a.score;
+            }
+            return b.document.metadata.modified - a.document.metadata.modified;
+        });
+        
+        const limitedResults = results.slice(0, maxResults);
+        const context = limitedResults
+            .slice(0, 3)
+            .map(result => `**${result.document.title}**:\n${result.document.content}`)
+            .join('\n\n');
+        
+        const relatedNotes = limitedResults.map(result => result.document.path);
+        
+        return {
+            query,
+            results: limitedResults,
+            context,
+            relatedNotes
+        };
     }
 
     async updateDocument(file: TFile): Promise<void> {
@@ -271,7 +403,9 @@ export class KnowledgeGraph {
                 inlinks: this.getInlinks(file.path),
                 tags: this.extractTags(metadata),
                 created: file.stat.ctime,
-                modified: file.stat.mtime
+                modified: file.stat.mtime,
+                size: file.stat.size,
+                contentHash: await this.generateContentHash(content)
             };
 
             const embeddingDoc: DocumentEmbedding = {
@@ -479,11 +613,198 @@ export class KnowledgeGraph {
             clearInterval(this.indexTimer);
         }
         
-        this.indexTimer = (window as any).setInterval(() => {
+        // Run smart incremental reindexing every hour
+        this.indexTimer = (window as any).setInterval(async () => {
             if (!this.isIndexing) {
-                this.buildIndex();
+                console.log('Starting hourly incremental reindex...');
+                await this.performIncrementalIndex();
             }
         }, this.config.indexInterval * 60 * 1000) as number;
+        
+        console.log(`Auto-indexing started: checking for changes every ${this.config.indexInterval} minutes`);
+    }
+
+    /**
+     * Performs smart incremental indexing - only processes changed files
+     */
+    private async performIncrementalIndex(): Promise<void> {
+        if (!this.config.enabled || this.isIndexing) return;
+        
+        this.isIndexing = true;
+        const startTime = Date.now();
+        
+        try {
+            console.log('🔄 Starting incremental index scan...');
+            
+            const files = this.vault.getMarkdownFiles();
+            const filesToUpdate: TFile[] = [];
+            const filesToRemove: string[] = [];
+            
+            // Check for modified or new files
+            for (const file of files) {
+                if (this.shouldIncludeFile(file)) {
+                    const existingDoc = this.documents.get(file.path);
+                    
+                    if (!existingDoc) {
+                        // New file
+                        filesToUpdate.push(file);
+                        console.log(`📄 New file detected: ${file.path}`);
+                    } else if (file.stat.mtime > existingDoc.modified || file.stat.size !== existingDoc.size) {
+                        // Modified file
+                        filesToUpdate.push(file);
+                        console.log(`✏️ Modified file detected: ${file.path}`);
+                    }
+                }
+            }
+            
+            // Check for deleted files
+            const existingPaths = new Set(files.map(f => f.path));
+            for (const [path] of this.documents) {
+                if (!existingPaths.has(path)) {
+                    filesToRemove.push(path);
+                    console.log(`🗑️ Deleted file detected: ${path}`);
+                }
+            }
+            
+            const totalChanges = filesToUpdate.length + filesToRemove.length;
+            
+            if (totalChanges === 0) {
+                console.log('✅ No changes detected - index is up to date');
+                return;
+            }
+            
+            console.log(`📊 Processing ${totalChanges} changes (${filesToUpdate.length} updates, ${filesToRemove.length} removals)`);
+            
+            // Remove deleted files
+            for (const path of filesToRemove) {
+                this.documents.delete(path);
+                this.embeddings.delete(path);
+                this.connections.delete(path);
+            }
+            
+            // Update modified/new files
+            let processedCount = 0;
+            for (const file of filesToUpdate) {
+                try {
+                    const content = await this.vault.read(file);
+                    const contentHash = await this.generateContentHash(content);
+                    
+                    // Double-check if content actually changed
+                    const existingDoc = this.documents.get(file.path);
+                    if (existingDoc && existingDoc.contentHash === contentHash) {
+                        console.log(`⏭️ Skipping ${file.path} - content unchanged despite stat difference`);
+                        continue;
+                    }
+                    
+                    // Process the file
+                    await this.processFile(file, content, contentHash);
+                    processedCount++;
+                    
+                    // Add small delay to prevent UI blocking
+                    if (processedCount % 5 === 0) {
+                        await new Promise(resolve => setTimeout(resolve, 10));
+                    }
+                    
+                } catch (error) {
+                    console.error(`Failed to process file ${file.path}:`, error);
+                }
+            }
+            
+            // Update connections for all affected files
+            console.log('🔗 Updating document connections...');
+            this.updateAllConnections();
+            
+            // Persist the updated data
+            this.persistData();
+            
+            const duration = Date.now() - startTime;
+            const stats = this.getStats();
+            
+            console.log(`✅ Incremental index complete: ${processedCount} files processed in ${duration}ms`);
+            console.log(`📈 Index stats: ${stats.documentsCount} documents, ${stats.embeddingsCount} embeddings`);
+            
+        } catch (error) {
+            console.error('❌ Incremental indexing failed:', error);
+        } finally {
+            this.isIndexing = false;
+        }
+    }
+    
+    /**
+     * Processes a single file during incremental indexing
+     */
+    private async processFile(file: TFile, content: string, contentHash: string): Promise<void> {
+        const node = await this.createDocumentNode(file, content);
+        node.contentHash = contentHash;
+        
+        this.documents.set(file.path, node);
+        
+        // Generate embeddings if embedding manager is ready
+        if (this.embeddingManager.isReady()) {
+            try {
+                const embedding = await this.embeddingManager.generateEmbedding(content);
+                const embeddingDoc = {
+                    id: node.id,
+                    path: file.path,
+                    title: node.title,
+                    content: content.substring(0, 1000), // Store first 1000 chars for context
+                    embedding,
+                    metadata: {
+                        created: node.created,
+                        modified: node.modified,
+                        size: node.size,
+                        tags: node.tags,
+                        links: node.outlinks
+                    }
+                };
+                
+                this.embeddings.set(file.path, embeddingDoc);
+            } catch (error) {
+                console.error(`Failed to generate embedding for ${file.path}:`, error);
+            }
+        }
+    }
+    
+    /**
+     * Creates a DocumentNode from a TFile and its content
+     */
+    private async createDocumentNode(file: TFile, content: string): Promise<DocumentNode> {
+        const metadata = this.metadataCache.getFileCache(file);
+        
+        return {
+            id: file.path,
+            path: file.path,
+            title: file.basename,
+            content: this.extractTextContent(content),
+            outlinks: this.extractLinks(metadata),
+            inlinks: [], // Will be updated during connection building
+            tags: this.extractTags(metadata),
+            created: file.stat.ctime,
+            modified: file.stat.mtime,
+            size: file.stat.size,
+            contentHash: await this.generateContentHash(content)
+        };
+    }
+
+    /**
+     * Generates a simple hash of content for change detection
+     */
+    private async generateContentHash(content: string): Promise<string> {
+        // Simple hash function for change detection
+        let hash = 0;
+        for (let i = 0; i < content.length; i++) {
+            const char = content.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return hash.toString(36);
+    }
+
+    /**
+     * Updates all document connections - alias for buildConnections
+     */
+    private updateAllConnections(): void {
+        this.buildConnections();
     }
 
     private persistData(): void {

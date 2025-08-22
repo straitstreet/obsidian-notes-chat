@@ -7,25 +7,62 @@ This is an Obsidian plugin that allows users to chat with their notes using AI. 
 
 ### ✅ Completed Features
 - **Plugin Structure**: Full Obsidian plugin setup with TypeScript
-- **Multi-Provider LLM Support**: Using Vercel AI SDK for unified interface
-  - OpenAI: GPT-4.1, GPT-4.1-mini, GPT-4.1-nano, O3, O4-mini (latest 2025 models)
-  - Anthropic: Claude 4 Opus 4.1, Claude 4 Sonnet, Claude 3.7 Sonnet
-  - Google: Gemini 2.5 Pro/Flash/Flash-Lite, Gemini 2.0 Flash Thinking
-  - Local: Ollama, Groq, Together AI support
+- **Multi-Provider LLM Support**: Using Token.js for unified interface with native tool calling
+  - OpenAI: gpt-4.5-preview, gpt-4.1, gpt-4o, gpt-4o-mini, o3-mini, o1-mini
+  - Anthropic: claude-3-7-sonnet-latest, claude-3-5-sonnet-latest, claude-3-5-haiku
+  - Google Gemini: gemini-2.0-flash-001, gemini-1.5-pro, gemini-1.5-flash
+  - Groq: llama-3.3-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b
+  - Mistral: mistral-large-latest, open-mixtral-8x22b, codestral-latest
+  - Cohere: command-r-plus, command-r, command-nightly
+  - Perplexity: llama-3.1-sonar models with online search
+  - OpenRouter: Access to 180+ models from various providers
+  - Local: Ollama support via OpenAI-compatible API
+- **Native Tool Calling**: Full function calling support across all compatible providers
 - **Testing Infrastructure**: Jest with unit/integration tests, CI/CD pipeline
 - **Test Vault**: Generated sample vault with realistic content
 - **Build System**: esbuild configuration for development and production
 - **Packaging Scripts**: Automated packaging and deployment scripts
 
-### 🚧 In Progress
-- Updating branding from "MindBridge" to "Chat with Notes"
-- Creating GitHub repository with proper naming
+### ✅ Recently Completed
+- **Always-On Context**: Removed toggle, made note search the core feature
+- **Smart Context Management**: Cline-inspired context gathering and prioritization
+- **8 Specialized Search Tools**: Comprehensive note discovery capabilities
+- **Intelligent Incremental Indexing**: Hourly updates with change detection only
+- **Real-Time Progress Display**: Live feedback during note search
+- **Context Window Management**: Smart token prioritization and truncation
+- **Fallback Systems**: Works with or without embeddings
 
-### 📋 Pending Features
-- Budget tracking and limits system
-- Local file embedding and knowledge graph
-- Hotkey system for LLM queries
-- UI pane for chat interactions
+## Sample Commands for Testing
+
+### Knowledge Discovery
+```
+What did I learn about machine learning?
+Show me my thoughts on productivity systems
+What are my key insights about relationships?
+Find notes about project management strategies
+```
+
+### Time-Based Queries  
+```
+What did I write last week?
+Show me recent notes about work
+Find notes from December about goals
+What did I capture recently about reading?
+```
+
+### Enhanced Search Commands
+```
+/search What are my core values?
+/agent Analyze my writing patterns over time
+/tools Find connections between creativity and productivity
+```
+
+### Analysis Requests
+```
+What patterns do you see in my thinking?
+Summarize my key learnings from this year
+Connect my notes about habit formation and productivity
+```
 
 ## Technical Architecture
 
@@ -39,10 +76,11 @@ src/
 ```
 
 ### Key Design Decisions
-1. **Vercel AI SDK**: Chosen for unified multi-provider interface
+1. **Token.js**: Chosen for unified multi-provider interface with native tool calling support
 2. **TypeScript**: Full type safety throughout
 3. **Jest Testing**: Comprehensive test coverage with mocks
 4. **Standalone Testing**: Can test core functionality without Obsidian
+5. **Native Function Calling**: OpenAI-compatible tool calling across all supported providers
 
 ### Scripts Available
 ```bash
@@ -62,7 +100,12 @@ npm run deploy               # Deploy to repository
   "providers": {
     "openai": { "enabled": true, "apiKey": "..." },
     "anthropic": { "enabled": true, "apiKey": "..." },
-    "google": { "enabled": false },
+    "google": { "enabled": true, "apiKey": "..." },
+    "groq": { "enabled": true, "apiKey": "..." },
+    "mistral": { "enabled": false, "apiKey": "..." },
+    "cohere": { "enabled": false, "apiKey": "..." },
+    "perplexity": { "enabled": false, "apiKey": "..." },
+    "openrouter": { "enabled": false, "apiKey": "..." },
     "ollama": { "enabled": true, "baseUrl": "http://localhost:11434" }
   },
   "budget": {
@@ -88,7 +131,8 @@ npm run deploy               # Deploy to repository
 - TypeScript with strict settings
 - No unnecessary comments unless complex logic
 - Follow Obsidian plugin conventions
-- Use existing libraries (Vercel AI SDK) over custom implementations
+- Use existing libraries (Token.js) over custom implementations
+- Native function calling for tool use across all providers
 
 ### Development Process
 1. **Quick Testing**: `npm run dev-install` - builds and installs to test-vault

@@ -1,6 +1,6 @@
 # Chat with Notes 💬📝
 
-> Simple AI chat interface for Obsidian - ask questions and get responses from multiple LLM providers.
+> Intelligent AI assistant that searches through your Obsidian notes to provide contextual answers. Built for knowledge discovery and note exploration.
 
 [![Tests](https://github.com/straitstreet/obsidian-notes-chat/actions/workflows/test.yml/badge.svg)](https://github.com/straitstreet/obsidian-notes-chat/actions/workflows/test.yml)
 [![Coverage](https://codecov.io/gh/straitstreet/obsidian-notes-chat/branch/main/graph/badge.svg)](https://codecov.io/gh/straitstreet/obsidian-notes-chat)
@@ -14,18 +14,18 @@
 - **Local Models**: Ollama, Groq, Together AI
 - **Unified Interface**: Powered by Vercel AI SDK
 
-### 💬 **Simple Chat Interface**
-- **Easy Access**: Click the chat icon in the ribbon or use command palette
-- **Provider Selection**: Switch between different AI providers
-- **Optional Context**: Include your notes as context when enabled
-- **Conversation History**: Messages saved between sessions
+### 💬 **Intelligent Note Discovery**
+- **Always-On Search**: Automatically searches your notes for relevant context
+- **Real-Time Progress**: See which notes are being found and analyzed
+- **Smart Context Ranking**: Prioritizes most relevant and recent information
+- **Simple Q&A Mode**: Each conversation is independent and focused
 
-### 🧠 **Smart Context**
+### 🧠 **Advanced Knowledge Graph**
+- **8 Specialized Search Tools**: Semantic, text, date, pattern, tag, link, recent, and detail search
 - **Local Embeddings**: Uses Transformers.js for client-side processing  
-- **Semantic Search**: Find conceptually related notes with AI
-- **Context Integration**: Automatically includes relevant notes in responses
-- **Real-time Indexing**: Updates as you create and modify notes
-- **Enabled by Default**: Works out of the box for better responses
+- **Smart Fallback**: Automatically uses text search when embeddings unavailable
+- **Hourly Sync**: Intelligent incremental indexing of changed files only
+- **Context Window Management**: Prioritizes most relevant results to fit LLM limits
 
 ### 💰 **Budget Tracking (Optional)**
 - **Cost Monitoring**: Track spending per request and monthly totals
@@ -93,32 +93,155 @@
 4. Smart context is enabled by default for better responses
 5. Start chatting with your notes!
 
+## 💡 Sample Commands
+
+### 🔍 **Knowledge Discovery**
+Ask questions about concepts, ideas, and topics in your notes:
+
+```
+What did I learn about machine learning?
+Show me my thoughts on productivity systems
+What are my key insights about relationships?
+Find notes about project management strategies
+What did I write about meditation techniques?
+```
+
+### 📅 **Time-Based Queries**
+Find information based on when you wrote it:
+
+```
+What did I write last week?
+Show me recent notes about work
+What was I thinking about yesterday?
+Find notes from December about goals
+What did I capture recently about reading?
+```
+
+### 🔎 **Specific Information**
+Search for exact data, quotes, or specific content:
+
+```
+Find my phone number
+What's my VIN number?
+Show me where I mentioned "deep work"
+Find the exact quote about creativity
+What email addresses do I have saved?
+```
+
+### 🏷️ **Tag and Category Searches**
+Explore notes by tags and organization:
+
+```
+Show me all notes tagged #productivity
+What's in my #ideas category?
+Find notes tagged both #work and #goals
+Show me everything tagged #book-notes
+What did I tag as #important?
+```
+
+### 🔗 **Relationship Discovery**
+Find connections between your notes and ideas:
+
+```
+What notes are connected to my goal-setting note?
+Show me notes that link to my project plan
+Find related notes about habits
+What's connected to my learning system?
+Show me notes that reference each other
+```
+
+### ⚡ **Enhanced Search Commands**
+Use special commands for deeper analysis:
+
+```
+/search What are my core values?
+/agent Analyze my writing patterns over time
+/tools Find connections between creativity and productivity
+/search Recent insights about technology trends
+/agent Compare my old vs new thinking on leadership
+```
+
+### 📊 **Analysis and Synthesis**
+Ask for analysis and connections across your knowledge:
+
+```
+What patterns do you see in my thinking?
+Summarize my key learnings from this year
+What are my most common themes?
+Connect my notes about habit formation and productivity
+What insights can you draw from my journal entries?
+```
+
+### 🎯 **Specific Use Cases**
+Real-world examples of how to use the plugin:
+
+```
+"Help me prepare for my presentation on AI" 
+→ Finds all AI-related notes, extracts key points, suggests structure
+
+"What did I decide about the new marketing strategy?"
+→ Searches recent notes for marketing decisions and reasoning
+
+"Show me my book highlights about leadership"
+→ Finds notes tagged #books with leadership content
+
+"What were my main takeaways from the conference?"
+→ Searches for conference notes and summarizes insights
+
+"Find my thoughts on work-life balance solutions"
+→ Semantic search for balance-related concepts and strategies
+```
+
 ## 🎯 Usage
 
 ### 🔄 Chat Interface
 - **Open Chat View**: Click the chat icon in the ribbon or use the command palette
-- **Multi-Session Support**: Create and switch between different chat sessions
-- **Context Toggle**: Enable/disable automatic context injection from your notes
-- **Provider Selection**: Switch between different LLM providers mid-conversation
+- **Always-On Context**: Automatically searches your notes for every question
+- **Real-Time Progress**: Watch as the AI searches through your knowledge base
+- **Provider Selection**: Switch between different LLM providers
+- **Simple Q&A**: Each conversation is independent and focused
 
-### ⚡ Hotkey Actions
-- **Quick Query** (`Ctrl+Shift+L`): Instant AI responses - creates a new note with results
-- **Knowledge Search** (`Ctrl+Shift+K`): Semantic search across your vault with similarity scores
-- **Context Chat** (`Ctrl+Shift+C`): AI chat with automatic context from relevant notes
-- **Explain Selection** (`Ctrl+Shift+E`): Explain highlighted text inline in your current note
-- **Summarize Selection** (`Ctrl+Shift+S`): Generate summaries of selected content
+### ⚡ Enhanced Search Commands
+Built-in commands for deeper note exploration:
+- **`/search [query]`**: Enhanced semantic search with detailed results
+- **`/agent [query]`**: Deep analysis using multiple search tools
+- **`/tools [query]`**: Multi-tool search across different note dimensions
 
-### 📊 Knowledge Graph
-- **Enable in Settings**: Turn on embedding generation and semantic indexing
-- **Automatic Indexing**: Notes are processed as you create/modify them
-- **Semantic Search**: Find related notes based on meaning, not just keywords
-- **Context Injection**: Relevant notes automatically included in AI conversations
+### 📊 Intelligent Context Discovery
+- **8 Search Tools**: Semantic, text, date, pattern, tag, link, recent, detail analysis
+- **Smart Prioritization**: Most relevant and recent notes get priority
+- **Context Window Management**: Automatically fits results within AI token limits
+- **Progressive Display**: See search progress and results in real-time
+- **Fallback Support**: Works with or without embeddings
 
 ### 💰 Budget Management
 - **Real-time Monitoring**: See current spending and remaining budget in chat interface
 - **Customizable Limits**: Set monthly budgets with warning and alert thresholds
 - **Usage Analytics**: Export detailed spending data for analysis
 - **Smart Alerts**: Notifications when approaching or exceeding limits
+
+## 💡 Tips for Best Results
+
+### 📝 **Optimize Your Notes for AI Search**
+- **Use descriptive titles**: "Machine Learning Insights" vs "Notes 1"
+- **Add relevant tags**: #productivity #books #ideas #goals
+- **Include context in notes**: Date important insights and decisions
+- **Link related notes**: Create connections the AI can discover
+- **Write clearly**: Well-structured notes yield better search results
+
+### 🎯 **Query Techniques**
+- **Be specific**: "What did I learn about React hooks?" vs "React stuff"
+- **Use time references**: "recent", "last week", "December insights"
+- **Mention note types**: "meeting notes", "book highlights", "journal entries"  
+- **Ask for connections**: "How do my productivity notes relate to my goals?"
+- **Request analysis**: "What patterns do you see in my learning?"
+
+### ⚡ **Power User Tips**
+- **Use force commands**: `/search`, `/agent`, `/tools` for enhanced results
+- **Combine search types**: The AI automatically uses the best search tools
+- **Ask follow-up questions**: Build on previous answers in the same session
+- **Request specific formats**: "Create a summary", "Make a list", "Show connections"
+- **Explore relationships**: "What notes link to this concept?"
 
 ## 🛠️ Development
 

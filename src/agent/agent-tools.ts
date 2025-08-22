@@ -81,7 +81,7 @@ export class KnowledgeGraphTools {
         return [
             {
                 name: 'semantic_search',
-                description: 'Search for notes using semantic similarity based on meaning and content',
+                description: 'Search for notes using semantic similarity (or text search as fallback if embeddings unavailable)',
                 parameters: {
                     type: 'object',
                     properties: {

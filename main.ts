@@ -4,7 +4,7 @@ import { BudgetManager, type BudgetConfig } from './src/budget/budget-manager';
 import { BudgetNotifications, type BudgetNotificationConfig } from './src/budget/budget-notifications';
 import { EmbeddingManager, type EmbeddingConfig } from './src/kb/embeddings';
 import { KnowledgeGraph, type KnowledgeGraphConfig } from './src/kb/knowledge-graph';
-import { ChatView, VIEW_TYPE_CHAT, type QueryOptions } from './src/ui/simple-chat-view';
+import { ChatView, VIEW_TYPE_CHAT } from './src/ui/simple-chat-view';
 
 interface ChatWithNotesSettings {
     providers: LLMProviderConfig;
@@ -12,7 +12,6 @@ interface ChatWithNotesSettings {
     budgetNotifications: BudgetNotificationConfig;
     embedding: EmbeddingConfig;
     knowledgeGraph: KnowledgeGraphConfig;
-    query: QueryOptions;
     enableBudgetTracking: boolean;
     enableKnowledgeGraph: boolean;
 }
@@ -20,7 +19,7 @@ interface ChatWithNotesSettings {
 const DEFAULT_SETTINGS: ChatWithNotesSettings = {
     providers: {
         openai: { enabled: false, apiKey: '' },
-        anthropic: { enabled: false, apiKey: '' },
+        anthropic: { enabled: true, apiKey: '' },
         google: { enabled: false, apiKey: '' },
         ollama: { enabled: true, baseUrl: 'http://localhost:11434' },
         groq: { enabled: false, apiKey: '' },
@@ -40,10 +39,12 @@ const DEFAULT_SETTINGS: ChatWithNotesSettings = {
         alertDismissMinutes: 30
     },
     embedding: {
-        modelName: 'Xenova/all-MiniLM-L6-v2',
-        batchSize: 10,
-        maxTokens: 512,
-        enabled: true
+        modelName: 'nomic-embed-text', // High-quality embedding model optimized for Ollama
+        batchSize: 5, // Reasonable batch size for Ollama
+        maxTokens: 512, // Good context length for embeddings
+        enabled: true, // Enable Ollama-based embeddings
+        provider: 'ollama' as const,
+        baseUrl: 'http://localhost:11434'
     },
     knowledgeGraph: {
         enabled: true, // Enable by default for better experience
@@ -54,13 +55,6 @@ const DEFAULT_SETTINGS: ChatWithNotesSettings = {
         fileTypes: ['md'],
         minContentLength: 100,
         maxDocuments: 1000
-    },
-    query: {
-        provider: 'ollama',
-        model: 'llama3.2',
-        includeContext: true, // Enable context by default since knowledge graph is enabled
-        maxContextResults: 3,
-        temperature: 0.7
     },
     enableBudgetTracking: false, // Simple toggle
     enableKnowledgeGraph: true   // Enable by default for better experience
@@ -90,9 +84,7 @@ export default class ChatWithNotesPlugin extends Plugin {
             (leaf) => new ChatView(
                 leaf,
                 this.providerManager,
-                this.knowledgeGraph,
-                this.budgetManager,
-                this.settings.query
+                this.knowledgeGraph
             )
         );
 
@@ -154,11 +146,9 @@ export default class ChatWithNotesPlugin extends Plugin {
             
             try {
                 console.log('Starting knowledge graph initialization...');
-                initNotice.setMessage('Loading embedding model...');
+                initNotice.setMessage('Initializing AI search capabilities...');
                 
-                await this.embeddingManager.initialize();
-                
-                initNotice.setMessage('Creating knowledge graph...');
+                // Create knowledge graph (embedding manager initialization happens inside)
                 this.knowledgeGraph = new KnowledgeGraph(
                     { ...this.settings.knowledgeGraph, enabled: true },
                     this.embeddingManager,
@@ -166,19 +156,30 @@ export default class ChatWithNotesPlugin extends Plugin {
                     this.app.metadataCache
                 );
                 
-                // Initialize with progress tracking
+                // Initialize with progress tracking (handles embedding failures internally)
                 await this.initializeKnowledgeGraphWithProgress(initNotice);
                 
                 const stats = this.knowledgeGraph.getStats();
-                console.log('Knowledge graph initialized successfully', stats);
+                const isEmbeddingReady = this.embeddingManager.isReady();
+                
+                console.log('Knowledge graph initialized successfully', stats, { embeddings: isEmbeddingReady });
                 
                 initNotice.hide();
-                new Notice(`Knowledge graph ready: ${stats.documentsCount} documents indexed for AI search`, 4000);
+                
+                // Show appropriate success message
+                if (isEmbeddingReady) {
+                    new Notice(`AI search ready: ${stats.documentsCount} documents indexed with semantic search`, 4000);
+                } else {
+                    new Notice(`Basic search ready: ${stats.documentsCount} documents indexed (text search only)`, 4000);
+                }
+                
             } catch (error) {
                 initNotice.hide();
                 console.error('Failed to initialize knowledge graph:', error);
-                new Notice('Knowledge graph initialization failed. Tool use will be limited.', 6000);
-                // Don't disable completely - still allow direct LLM calls
+                new Notice('Knowledge graph failed to initialize. Using direct LLM mode only.', 6000);
+                
+                // Ensure we have at least basic functionality
+                this.knowledgeGraph = null;
             }
         }
     }

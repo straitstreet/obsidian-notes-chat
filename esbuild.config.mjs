@@ -32,12 +32,42 @@ const context = await esbuild.context({
 		'@lezer/highlight',
 		'@lezer/lr',
 		...builtins],
+	plugins: [{
+		name: 'exclude-deps',
+		setup(build) {
+			// Replace cohere-ai with empty module
+			build.onResolve({ filter: /^cohere-ai$/ }, args => {
+				return { 
+					path: 'virtual:empty',
+					namespace: 'empty'
+				}
+			})
+			build.onLoad({ filter: /.*/, namespace: 'empty' }, () => {
+				return { contents: 'module.exports = {}' }
+			})
+			// Make readable-stream external
+			build.onResolve({ filter: /^readable-stream/ }, args => {
+				return { path: args.path, external: true }
+			})
+			// Make transformers external - complex browser compatibility
+			build.onResolve({ filter: /^@xenova\/transformers/ }, args => {
+				return { path: args.path, external: true }
+			})
+		}
+	}],
 	format: 'cjs',
+	platform: 'node',
 	target: 'es2020',
 	logLevel: "info",
-	sourcemap: prod ? false : 'inline',
+	sourcemap: 'inline', // Always include source maps for debugging
+	minify: false, // Disable minification for readable stack traces
 	treeShaking: true,
 	outfile: 'main.js',
+	define: {
+		'global': 'globalThis',
+		'process.env.NODE_ENV': JSON.stringify(prod ? 'production' : 'development'),
+	},
+	inject: ['./polyfills.js'],
 });
 
 if (prod) {

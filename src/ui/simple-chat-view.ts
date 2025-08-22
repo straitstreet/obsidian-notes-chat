@@ -3,13 +3,8 @@ import { LLMProviderManager, LLMResponse } from '../llm/provider-manager';
 import { KnowledgeGraph, SearchContext } from '../kb/knowledge-graph';
 import { BudgetManager } from '../budget/budget-manager';
 import { KnowledgeAgent, AgentConfig } from '../agent/knowledge-agent';
-export interface QueryOptions {
-    provider: string;
-    model: string;
-    includeContext: boolean;
-    maxContextResults: number;
-    temperature: number;
-}
+// Simplified - no user configuration needed
+// Will automatically pick best available model
 
 export const VIEW_TYPE_CHAT = 'chat-with-notes-view';
 
@@ -32,54 +27,39 @@ export interface ChatMessage {
 
 export class ChatView extends ItemView {
     private llmManager: LLMProviderManager;
-    private knowledgeGraph?: KnowledgeGraph;
-    private budgetManager?: BudgetManager;
-    private queryOptions: QueryOptions;
     private knowledgeAgent?: KnowledgeAgent;
     
-    private messages: ChatMessage[] = [];
+    private currentQuestion = '';
+    private currentAnswer = '';
     private isProcessing = false;
     
-    private chatContainer!: HTMLElement;
-    private messagesList!: HTMLElement;
+    private container!: HTMLElement;
     private inputArea!: HTMLTextAreaElement;
     private sendButton!: HTMLButtonElement;
-    private budgetDisplay?: HTMLElement;
+    private resultArea!: HTMLElement;
 
     constructor(
         leaf: WorkspaceLeaf,
         llmManager: LLMProviderManager,
-        knowledgeGraph?: KnowledgeGraph,
-        budgetManager?: BudgetManager,
-        queryOptions: QueryOptions = {
-            provider: 'ollama',
-            model: 'llama3.2',
-            includeContext: true, // Enable context by default for better responses
-            maxContextResults: 3,
-            temperature: 0.7
-        }
+        knowledgeGraph?: KnowledgeGraph
     ) {
         super(leaf);
         this.llmManager = llmManager;
-        this.knowledgeGraph = knowledgeGraph;
-        this.budgetManager = budgetManager;
-        this.queryOptions = queryOptions;
         
-        // Initialize knowledge agent if knowledge graph is available
-        if (this.knowledgeGraph) {
+        // Initialize knowledge agent with best available model
+        if (knowledgeGraph) {
+            const { provider, model } = this.getBestAvailableModel();
             this.knowledgeAgent = new KnowledgeAgent(
                 this.llmManager,
-                this.knowledgeGraph,
+                knowledgeGraph,
                 {
-                    provider: queryOptions.provider,
-                    model: queryOptions.model,
-                    maxIterations: 5,
-                    temperature: queryOptions.temperature
+                    provider,
+                    model,
+                    maxIterations: 3,
+                    temperature: 0.3
                 }
             );
         }
-        
-        this.loadMessages();
     }
 
     getViewType() {
@@ -95,621 +75,178 @@ export class ChatView extends ItemView {
     }
 
     async onOpen() {
-        const container = this.containerEl.children[1] as HTMLElement;
-        container.empty();
-        container.addClass('chat-view-container');
+        this.container = this.containerEl.children[1] as HTMLElement;
+        this.container.empty();
+        this.container.addClass('simple-chat-container');
 
-        this.buildChatInterface(container);
-        this.updateBudgetDisplay();
+        this.buildInterface();
     }
 
-    private buildChatInterface(container: HTMLElement) {
-        // Simple header
-        const header = container.createEl('div', { cls: 'chat-header' });
+    private buildInterface() {
+        // Simple search-style interface
+        const searchContainer = this.container.createEl('div', { cls: 'search-container' });
         
-        // Title and provider selector
-        header.createEl('h3', { text: 'Chat with Notes', cls: 'chat-title' });
-        
-        const providerControl = header.createEl('div', { cls: 'provider-control' });
-        
-        const providerSelect = providerControl.createEl('select', { cls: 'provider-select' });
-        this.llmManager.getAvailableProviders().forEach(provider => {
-            const displayName = this.getProviderDisplayName(provider);
-            providerSelect.createEl('option', { value: provider, text: displayName });
-        });
-        providerSelect.value = this.queryOptions.provider;
-        
-        const modelSelect = providerControl.createEl('select', { cls: 'model-select' });
-        this.updateModelSelect(modelSelect);
-        
-        providerSelect.addEventListener('change', () => {
-            this.queryOptions.provider = (providerSelect as HTMLSelectElement).value;
-            this.updateModelSelect(modelSelect);
-            this.updateAgentConfig();
-        });
-        
-        modelSelect.addEventListener('change', () => {
-            this.queryOptions.model = (modelSelect as HTMLSelectElement).value;
-            this.updateAgentConfig();
-        });
-
-        // Budget display (only if enabled)
-        if (this.budgetManager) {
-            this.budgetDisplay = header.createEl('div', { cls: 'budget-display' });
-        }
-
-        // Chat container
-        this.chatContainer = container.createEl('div', { cls: 'chat-container' });
-        
-        // Messages list
-        this.messagesList = this.chatContainer.createEl('div', { cls: 'messages-list' });
-        this.renderMessages();
-
-        // Input area
-        const inputContainer = this.chatContainer.createEl('div', { cls: 'input-container' });
-        
-        // Context toggle (only if knowledge graph is available)
-        if (this.knowledgeGraph) {
-            const contextControl = inputContainer.createEl('div', { cls: 'context-control' });
-            const contextCheckbox = contextControl.createEl('input', { 
-                type: 'checkbox', 
-                cls: 'context-checkbox' 
-            }) as HTMLInputElement;
-            contextCheckbox.checked = this.queryOptions.includeContext;
-            contextCheckbox.addEventListener('change', () => {
-                this.queryOptions.includeContext = contextCheckbox.checked;
-            });
-            contextControl.createEl('label', { text: ' Use AI agent to search my notes' });
-        }
-
-        // Input area
-        const inputRow = inputContainer.createEl('div', { cls: 'input-row' });
+        // Input row
+        const inputRow = searchContainer.createEl('div', { cls: 'search-input-row' });
         
         this.inputArea = inputRow.createEl('textarea', {
-            cls: 'chat-input',
+            cls: 'search-input',
             attr: {
-                placeholder: 'Type your question... (Ctrl+Enter to send)',
-                rows: '3'
+                placeholder: 'Ask a question about your notes...',
+                rows: '1'
             }
         }) as HTMLTextAreaElement;
 
         this.sendButton = inputRow.createEl('button', {
-            text: 'Send',
-            cls: 'send-button mod-cta'
+            cls: 'search-button'
         }) as HTMLButtonElement;
+        
+        // Use Obsidian's built-in search icon
+        this.sendButton.createEl('span', { cls: 'search-icon' });
+        this.sendButton.querySelector('.search-icon')?.setAttr('data-lucide', 'search');
+
+        // Result area
+        this.resultArea = this.container.createEl('div', { cls: 'result-area' });
 
         // Event listeners
         this.inputArea.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                this.handleSendMessage();
+                this.handleSearch();
             }
         });
 
         this.sendButton.addEventListener('click', () => {
-            this.handleSendMessage();
+            this.handleSearch();
         });
 
         // Auto-resize textarea
         this.inputArea.addEventListener('input', () => {
             this.inputArea.style.height = 'auto';
-            this.inputArea.style.height = this.inputArea.scrollHeight + 'px';
-        });
-    }
-
-    private getProviderDisplayName(provider: string): string {
-        const names: { [key: string]: string } = {
-            'openai': 'OpenAI',
-            'anthropic': 'Anthropic',
-            'google': 'Google Gemini',
-            'ollama': 'Ollama (Local)',
-            'groq': 'Groq',
-            'together': 'Together AI'
-        };
-        return names[provider] || provider;
-    }
-
-    private updateModelSelect(modelSelect: HTMLElement) {
-        const select = modelSelect as HTMLSelectElement;
-        select.innerHTML = '';
-        const models = this.llmManager.getModelsForProvider(this.queryOptions.provider);
-        models.forEach(model => {
-            select.createEl('option', { value: model, text: model });
+            this.inputArea.style.height = Math.min(this.inputArea.scrollHeight, 120) + 'px';
         });
         
-        if (models.includes(this.queryOptions.model)) {
-            select.value = this.queryOptions.model;
-        } else if (models.length > 0) {
-            select.value = models[0];
-            this.queryOptions.model = models[0];
-        }
+        this.inputArea.focus();
     }
 
-    private async handleSendMessage() {
-        const message = this.inputArea.value?.trim();
-        if (!message || this.isProcessing) return;
-
-        // Check for force tool use commands
-        const forceToolUse = message.startsWith('/search') || message.startsWith('/agent') || message.startsWith('/tools');
-        const cleanMessage = forceToolUse ? message.replace(/^\/\w+\s*/, '') : message;
-
-        // Check budget (only if budget manager exists)
-        if (this.budgetManager) {
-            const budgetStatus = this.budgetManager.getBudgetStatus();
-            if (budgetStatus.warningLevel === 'exceeded') {
-                new Notice('Budget exceeded. Cannot send message.');
-                return;
-            }
+    private getBestAvailableModel(): { provider: string, model: string } {
+        const providers = this.llmManager.getAvailableProviders();
+        
+        // Prefer fast, cheap models for search-style interface
+        if (providers.includes('anthropic')) {
+            return { provider: 'anthropic', model: 'claude-3-5-haiku-20241022' };
         }
+        if (providers.includes('openai')) {
+            return { provider: 'openai', model: 'gpt-4o-mini' };
+        }
+        if (providers.includes('ollama')) {
+            return { provider: 'ollama', model: 'llama3.2' };
+        }
+        
+        // Fallback to first available
+        const provider = providers[0];
+        const models = this.llmManager.getModelsForProvider(provider);
+        return { provider, model: models[0] };
+    }
+
+    private async handleSearch() {
+        const question = this.inputArea.value?.trim();
+        if (!question || this.isProcessing) return;
 
         this.isProcessing = true;
         this.updateUIState(true);
-
-        // Add user message (show original message with command)
-        const userMessage: ChatMessage = {
-            id: Date.now().toString(),
-            role: 'user',
-            content: message,
-            timestamp: Date.now()
-        };
-
-        this.messages.push(userMessage);
-        this.renderMessages();
         
-        // Clear input
+        this.currentQuestion = question;
+        this.currentAnswer = '';
+        
+        // Clear input and show current question
         this.inputArea.value = '';
         this.inputArea.style.height = 'auto';
+        this.displayCurrentSearch();
 
         try {
-            let response: LLMResponse;
-            let relatedNotes: string[] = [];
-            let agentToolCalls: any[] = [];
-
-            // Use agent if context enabled OR force command used
-            if ((this.queryOptions.includeContext || forceToolUse) && this.knowledgeAgent) {
-                // Use agent for knowledge graph search with streaming progress indicators
-                this.updateUIState(true, 'Starting AI agent...');
-                
-                // Create tool execution indicator
-                const toolIndicator: ChatMessage = {
-                    id: 'tools-' + Date.now(),
-                    role: 'system',
-                    content: forceToolUse ? 
-                        `**AI Agent Force Activated** - Processing command: \`${message.split(' ')[0]}\`\n\nAnalyzing your question...` :
-                        '**AI Agent Active** - Analyzing your question...',
-                    timestamp: Date.now()
-                };
-                this.messages.push(toolIndicator);
-                this.renderMessages();
-                
-                // Use streaming version for better progress feedback
-                const agentStream = this.knowledgeAgent.processQueryStreaming(cleanMessage || message);
-                let agentResponse: any = { content: '', toolCalls: [] };
-                const toolResults: any[] = [];
-                
-                for await (const chunk of agentStream) {
-                    switch (chunk.type) {
-                        case 'tool_start':
-                            this.updateUIState(true, `Using ${chunk.data.toolName}...`);
-                            toolIndicator.content = `**Tool Active**: \`${chunk.data.toolName}\`\n\nSearching your notes with ${this.getToolDescription(chunk.data.toolName)}...`;
-                            this.renderMessages();
-                            break;
-                        case 'tool_result':
-                            const toolCall = chunk.data.toolCall;
-                            toolResults.push(toolCall);
-                            
-                            const resultSummary = this.formatToolResult(toolCall);
-                            toolIndicator.content = `**Tools Used**: ${toolResults.map(t => `\`${t.toolName}\``).join(', ')}\n\n${toolResults.map(t => this.formatToolResult(t)).join('\n\n')}`;
-                            this.renderMessages();
-                            break;
-                        case 'response_start':
-                            this.updateUIState(true, 'Generating response...');
-                            toolIndicator.content = `**Agent Complete** - Used ${toolResults.length} tool${toolResults.length !== 1 ? 's' : ''}\n\n${toolResults.map(t => this.formatToolResult(t)).join('\n\n')}\n\nNow generating comprehensive response...`;
-                            this.renderMessages();
-                            break;
-                        case 'response_end':
-                            agentResponse = chunk.data;
-                            break;
-                    }
-                }
-                
-                // Remove tool indicator message
-                this.messages = this.messages.filter(msg => msg.id !== toolIndicator.id);
-                
-                response = {
-                    content: agentResponse.content || 'No response generated',
-                    provider: this.queryOptions.provider,
-                    model: this.queryOptions.model,
-                    usage: {
-                        inputTokens: 0,
-                        outputTokens: 0,
-                        totalTokens: 0
-                    }
-                };
-                
-                // Extract related notes from tool calls
-                for (const toolCall of agentResponse.toolCalls || []) {
-                    if (toolCall.result && toolCall.result.results) {
-                        for (const result of toolCall.result.results) {
-                            if (result.path) {
-                                relatedNotes.push(result.path);
-                            }
-                        }
-                    }
-                }
-                
-                agentToolCalls = agentResponse.toolCalls || [];
-                
+            if (this.knowledgeAgent) {
+                // Use knowledge agent to search notes
+                const response = await this.knowledgeAgent.processQuery(question);
+                this.currentAnswer = response.content || 'No answer found.';
             } else {
-                // Direct LLM call without knowledge graph
-                if (forceToolUse) {
-                    // User tried to force tool use but no agent available
-                    response = {
-                        content: `**Tool use requested but not available**\n\nYou used the command \`${message.split(' ')[0]}\` to force tool use, but either:\n- Knowledge graph is not initialized\n- AI agent is not available\n\nTo enable tool use:\n1. Enable "Use AI agent to search my notes" in the chat settings\n2. Ensure your vault has been indexed for search\n\nFor now, I'll respond without using tools.`,
-                        provider: this.queryOptions.provider,
-                        model: this.queryOptions.model,
-                        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
-                    };
-                } else {
-                    this.updateUIState(true, 'Generating response...');
-                    
-                    const conversationHistory = this.messages.slice(-10).map(msg => ({
-                        role: msg.role === 'user' ? 'user' : 'assistant',
-                        content: msg.content
-                    }));
-
-                    response = await this.llmManager.generateResponse(
-                        this.queryOptions.provider,
-                        this.queryOptions.model,
-                        conversationHistory,
-                        { temperature: this.queryOptions.temperature }
-                    );
-                }
+                // Fallback to direct LLM without note context
+                const { provider, model } = this.getBestAvailableModel();
+                const response = await this.llmManager.generateResponse(
+                    provider,
+                    model,
+                    [{ role: 'user', content: question }],
+                    { temperature: 0.3 }
+                );
+                this.currentAnswer = response.content;
             }
-
-            // Add assistant message
-            const assistantMessage: ChatMessage = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: response.content,
-                timestamp: Date.now(),
-                provider: response.provider,
-                model: response.model,
-                usage: response.usage,
-                relatedNotes: relatedNotes.length > 0 ? relatedNotes : undefined,
-                agentToolCalls: agentToolCalls.length > 0 ? agentToolCalls : undefined
-            };
-
-            this.messages.push(assistantMessage);
-            this.renderMessages();
-            this.updateBudgetDisplay();
-
+            
         } catch (error) {
-            console.error('Chat failed:', error);
-            const errorText = (error as Error).message;
-            new Notice(`Chat failed: ${errorText}`);
-
-            // Add error message with full details
-            const errorMessage: ChatMessage = {
-                id: (Date.now() + 1).toString(),
-                role: 'system',
-                content: `**Error:** ${errorText}`,
-                timestamp: Date.now()
-            };
-
-            this.messages.push(errorMessage);
-            this.renderMessages();
-
+            console.error('Search failed:', error);
+            this.currentAnswer = 'Sorry, I encountered an error while searching your notes.';
         } finally {
             this.isProcessing = false;
             this.updateUIState(false);
-            this.saveMessages();
+            this.displayCurrentSearch();
         }
     }
 
-    private renderMessages() {
-        this.messagesList.empty();
-
-        if (this.messages.length === 0) {
-            const welcomeEl = this.messagesList.createEl('div', { cls: 'welcome-message' });
-            welcomeEl.createEl('h4', { text: 'Welcome to Chat with Notes!' });
-            welcomeEl.createEl('p', { text: 'Ask me anything and I\'ll help you out.' });
-            
+    private displayCurrentSearch() {
+        this.resultArea.empty();
+        
+        if (!this.currentQuestion) {
+            // Show placeholder
+            const placeholder = this.resultArea.createEl('div', { cls: 'search-placeholder' });
+            placeholder.createEl('p', { text: 'Ask questions about your notes and get instant answers.' });
             if (this.knowledgeAgent) {
-                const commandsEl = welcomeEl.createEl('div', { cls: 'command-help' });
-                commandsEl.createEl('h5', { text: 'Tool Use Commands:' });
-                const commandsList = commandsEl.createEl('ul');
-                commandsList.createEl('li').innerHTML = '<code>/search</code> - Force AI agent to search your notes';
-                commandsList.createEl('li').innerHTML = '<code>/agent</code> - Activate AI agent with tool use';
-                commandsList.createEl('li').innerHTML = '<code>/tools</code> - Use specialized search tools';
-                
-                if (!this.queryOptions.includeContext) {
-                    commandsEl.createEl('p', { text: 'Note: Tool use is currently disabled. Use these commands to force tool use, or enable "Use AI agent to search my notes" above.' });
-                } else {
-                    commandsEl.createEl('p', { text: 'Tool use is enabled by default. Use these commands to explicitly force tool use.' });
-                }
+                placeholder.createEl('p', { text: 'AI-powered search is ready. 🧠', cls: 'status-ready' });
+            } else {
+                placeholder.createEl('p', { text: 'Note indexing in progress... ⏳', cls: 'status-loading' });
             }
             return;
         }
-
-        this.messages.forEach(message => {
-            const isThinking = message.id?.startsWith('thinking-');
-            const messageEl = this.messagesList.createEl('div', {
-                cls: `message message-${message.role}${isThinking ? ' message-thinking' : ''}`
-            });
-
-            // Message header
-            const headerEl = messageEl.createEl('div', { cls: 'message-header' });
-            
-            const roleEl = headerEl.createEl('span', { 
-                text: message.role === 'user' ? 'You' : 
-                     message.role === 'assistant' ? (message.model || 'Assistant') : 'System',
-                cls: 'message-role'
-            });
-
-            const rightSection = headerEl.createEl('div', { cls: 'message-header-right' });
-            
-            // Copy button (only for assistant messages)
-            if (message.role === 'assistant') {
-                const copyBtn = rightSection.createEl('button', {
-                    text: '📋',
-                    cls: 'copy-message-btn',
-                    attr: { 'aria-label': 'Copy message' }
-                });
-                copyBtn.addEventListener('click', () => {
-                    navigator.clipboard.writeText(message.content).then(() => {
-                        copyBtn.textContent = '✅';
-                        setTimeout(() => copyBtn.textContent = '📋', 2000);
-                    }).catch(() => {
-                        copyBtn.textContent = '❌';
-                        setTimeout(() => copyBtn.textContent = '📋', 2000);
-                    });
-                });
-            }
-            
-            const timeEl = rightSection.createEl('span', {
-                text: new Date(message.timestamp).toLocaleTimeString(),
-                cls: 'message-time'
-            });
-
-            // Message content
-            const contentEl = messageEl.createEl('div', { 
-                cls: 'message-content'
-            });
-            
-            this.renderMessageContent(contentEl, message.content);
-
-            // Related notes (for assistant messages with context)
-            if (message.relatedNotes && message.relatedNotes.length > 0) {
-                const notesEl = messageEl.createEl('div', { cls: 'related-notes' });
-                notesEl.createEl('div', { 
-                    text: 'Related Notes:', 
-                    cls: 'related-notes-title'
-                });
-                
-                const notesList = notesEl.createEl('ul', { cls: 'related-notes-list' });
-                message.relatedNotes.forEach(notePath => {
-                    const noteItem = notesList.createEl('li');
-                    const noteLink = noteItem.createEl('a', {
-                        text: notePath,
-                        cls: 'related-note-link'
-                    });
-                    
-                    noteLink.addEventListener('click', async (e: Event) => {
-                        e.preventDefault();
-                        const file = this.app.vault.getAbstractFileByPath(notePath);
-                        if (file && 'stat' in file) {
-                            const leaf = this.app.workspace.getLeaf(false);
-                            await leaf.openFile(file as any);
-                        }
-                    });
-                });
-            }
-
-            // Agent tool calls (for agent-generated messages)
-            if (message.agentToolCalls && message.agentToolCalls.length > 0) {
-                const toolsEl = messageEl.createEl('div', { cls: 'agent-tools' });
-                toolsEl.createEl('div', { 
-                    text: 'Knowledge Search Tools Used:', 
-                    cls: 'agent-tools-title'
-                });
-                
-                const toolsList = toolsEl.createEl('ul', { cls: 'agent-tools-list' });
-                message.agentToolCalls.forEach(toolCall => {
-                    const toolItem = toolsList.createEl('li');
-                    const toolName = toolCall.toolName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
-                    
-                    let summary = '';
-                    if (toolCall.result && toolCall.result.found !== undefined) {
-                        summary = ` - Found ${toolCall.result.found} result${toolCall.result.found !== 1 ? 's' : ''}`;
-                    }
-                    
-                    toolItem.createEl('span', {
-                        text: `${toolName}${summary}`,
-                        cls: 'tool-call'
-                    });
-                });
-            }
-
-            // Usage info (for assistant messages)
-            if (message.usage) {
-                const usageEl = messageEl.createEl('div', { cls: 'message-usage' });
-                usageEl.createEl('span', { 
-                    text: `${message.usage.totalTokens} tokens`,
-                    cls: 'usage-tokens'
-                });
-                
-                if (message.usage.cost) {
-                    usageEl.createEl('span', { 
-                        text: `$${message.usage.cost.toFixed(4)}`,
-                        cls: 'usage-cost'
-                    });
-                }
-            }
-        });
-
-        // Scroll to bottom
-        this.messagesList.scrollTop = this.messagesList.scrollHeight;
-    }
-
-    private renderMessageContent(container: HTMLElement, content: string) {
-        // Simple markdown-like rendering
-        const lines = content.split('\n');
-        let inCodeBlock = false;
-        let codeBlockEl: HTMLElement | null = null;
-
-        lines.forEach(line => {
-            if (line.startsWith('```')) {
-                if (inCodeBlock) {
-                    inCodeBlock = false;
-                    codeBlockEl = null;
-                } else {
-                    inCodeBlock = true;
-                    codeBlockEl = container.createEl('pre', { cls: 'code-block' });
-                }
-                return;
-            }
-
-            if (inCodeBlock && codeBlockEl) {
-                codeBlockEl.appendText(line + '\n');
-            } else {
-                const p = container.createEl('p');
-                
-                // Simple inline formatting
-                let formattedLine = line
-                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                    .replace(/`(.*?)`/g, '<code>$1</code>');
-
-                p.innerHTML = formattedLine;
-            }
-        });
-    }
-
-    private updateUIState(processing: boolean, status?: string) {
-        this.sendButton.disabled = processing;
         
+        // Show current question
+        const questionEl = this.resultArea.createEl('div', { cls: 'current-question' });
+        questionEl.createEl('strong', { text: this.currentQuestion });
+        
+        // Show answer or loading
+        const answerEl = this.resultArea.createEl('div', { cls: 'current-answer' });
+        if (this.isProcessing) {
+            answerEl.createEl('div', { text: 'Searching your notes...', cls: 'loading' });
+        } else if (this.currentAnswer) {
+            this.renderContent(answerEl, this.currentAnswer);
+        }
+    }
+
+    private renderContent(container: HTMLElement, content: string) {
+        // Simple formatting for readability
+        const lines = content.split('\n');
+        lines.forEach(line => {
+            if (line.trim()) {
+                const p = container.createEl('p');
+                p.textContent = line;
+            }
+        });
+    }
+
+    private updateUIState(processing: boolean) {
+        this.sendButton.disabled = processing;
+        this.inputArea.disabled = processing;
+        
+        const icon = this.sendButton.querySelector('.search-icon') as HTMLElement;
         if (processing) {
-            this.sendButton.textContent = status || 'Thinking...';
-            this.sendButton.classList.add('is-loading');
-            this.inputArea.setAttribute('disabled', 'true');
+            icon.setAttr('data-lucide', 'loader-2');
+            icon.addClass('animate-spin');
         } else {
-            this.sendButton.textContent = 'Send';
-            this.sendButton.classList.remove('is-loading');
-            this.inputArea.removeAttribute('disabled');
+            icon.setAttr('data-lucide', 'search');
+            icon.removeClass('animate-spin');
             this.inputArea.focus();
         }
     }
 
-    private updateBudgetDisplay() {
-        if (!this.budgetDisplay || !this.budgetManager) return;
-
-        const status = this.budgetManager.getBudgetStatus();
-        this.budgetDisplay.empty();
-
-        const budgetEl = this.budgetDisplay.createEl('div', { cls: 'budget-info' });
-        
-        const spendEl = budgetEl.createEl('span', {
-            text: `$${status.currentSpend.toFixed(2)}/$${status.monthlyLimit.toFixed(2)}`,
-            cls: `budget-amount budget-${status.warningLevel}`
-        });
-
-        const percentEl = budgetEl.createEl('span', {
-            text: `(${(status.percentageUsed * 100).toFixed(0)}%)`,
-            cls: 'budget-percent'
-        });
-
-        // Warning indicators
-        if (status.warningLevel === 'warning') {
-            budgetEl.createEl('span', { text: '⚠️', cls: 'budget-warning' });
-        } else if (status.warningLevel === 'alert') {
-            budgetEl.createEl('span', { text: '🚨', cls: 'budget-alert' });
-        } else if (status.warningLevel === 'exceeded') {
-            budgetEl.createEl('span', { text: '❌', cls: 'budget-exceeded' });
-        }
-    }
-
-    private saveMessages() {
-        try {
-            (window as any).localStorage?.setItem('chat-with-notes-messages', JSON.stringify(this.messages));
-        } catch (error) {
-            console.error('Failed to save messages:', error);
-        }
-    }
-
-    private loadMessages() {
-        try {
-            const stored = (window as any).localStorage?.getItem('chat-with-notes-messages');
-            if (stored) {
-                this.messages = JSON.parse(stored);
-            }
-        } catch (error) {
-            console.error('Failed to load messages:', error);
-            this.messages = [];
-        }
-    }
-
-    clearChat() {
-        this.messages = [];
-        this.renderMessages();
-        this.saveMessages();
-    }
-
-    updateQueryOptions(options: Partial<QueryOptions>) {
-        this.queryOptions = { ...this.queryOptions, ...options };
-        this.updateAgentConfig();
-    }
-
-    private updateAgentConfig() {
-        if (this.knowledgeAgent) {
-            this.knowledgeAgent.updateConfig({
-                provider: this.queryOptions.provider,
-                model: this.queryOptions.model,
-                temperature: this.queryOptions.temperature
-            });
-        }
-    }
-
+    // Simplified - no message persistence needed for search-style interface
     async onClose() {
-        this.saveMessages();
-    }
-
-    private getToolDescription(toolName: string): string {
-        const descriptions: { [key: string]: string } = {
-            'semantic_search': 'semantic similarity matching',
-            'text_search': 'exact text matching',
-            'search_recent_notes': 'recent notes with filtering',
-            'search_by_date': 'time-based filtering',
-            'find_specific_info': 'pattern extraction (VIN, phone, email)',
-            'search_by_tags': 'tag-based filtering',
-            'search_by_links': 'relationship analysis',
-            'get_note_details': 'detailed note content'
-        };
-        return descriptions[toolName] || 'specialized search';
-    }
-
-    private formatToolResult(toolCall: any): string {
-        const { toolName, result } = toolCall;
-        if (result.error) {
-            return `**${toolName}**: Error - ${result.error}`;
-        }
-        
-        const found = result.found || 0;
-        if (found === 0) {
-            return `**${toolName}**: No results found`;
-        }
-        
-        const noteWord = found === 1 ? 'note' : 'notes';
-        let summary = `**${toolName}**: Found ${found} ${noteWord}`;
-        
-        // Add snippet of top results
-        if (result.results && result.results.length > 0) {
-            const topResult = result.results[0];
-            if (topResult.title) {
-                summary += ` (top: "${topResult.title}")`;
-            }
-        }
-        
-        return summary;
+        // No cleanup needed
     }
 }
