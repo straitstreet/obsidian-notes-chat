@@ -169,6 +169,8 @@ The user has a comprehensive note collection - assume it contains valuable conte
                             // Check if semantic search returned no results and try intelligent text search
                             if (toolCall.toolName === 'semantic_search' && result.found === 0) {
                                 console.log(`  🎯 Semantic search found no results, generating intelligent text search...`);
+                                console.log(`  📊 Semantic search result details:`, result);
+                                
                                 const textSearchQuery = await this.generateTextSearchQuery(toolCall.args.query);
                                 
                                 if (textSearchQuery && textSearchQuery !== toolCall.args.query) {
@@ -183,6 +185,8 @@ The user has a comprehensive note collection - assume it contains valuable conte
                                                 topK: toolCall.args.topK || 5
                                             });
                                             
+                                            console.log(`  📋 Text search result:`, textSearchResult);
+                                            
                                             if (textSearchResult.found > 0) {
                                                 console.log(`  ✨ Intelligent text search found ${textSearchResult.found} results!`);
                                                 // Use the text search results instead
@@ -190,11 +194,17 @@ The user has a comprehensive note collection - assume it contains valuable conte
                                                 result.results = textSearchResult.results;
                                                 result.context = textSearchResult.context;
                                                 result.fallback_query = textSearchQuery;
+                                            } else {
+                                                console.log(`  ⚠️ Even intelligent text search found no results`);
                                             }
                                         } catch (textSearchError) {
                                             console.error(`  ❌ Intelligent text search failed:`, textSearchError);
                                         }
+                                    } else {
+                                        console.error(`  ❌ text_search tool not found in toolMap`);
                                     }
+                                } else {
+                                    console.log(`  ⚠️ Could not generate improved text search query`);
                                 }
                             }
                             

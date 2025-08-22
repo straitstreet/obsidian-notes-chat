@@ -40,14 +40,17 @@ export class EmbeddingManager {
         if (this.isInitialized || !this.config.enabled) return;
 
         try {
-            console.log(`Initializing embedding provider: ${this.config.provider}`);
+            console.log(`Initializing embedding provider: ${this.config.provider}`, this.config);
             
-            if (this.config.provider === 'ollama') {
+            // Default to ollama if provider is undefined
+            const provider = this.config.provider || 'ollama';
+            
+            if (provider === 'ollama') {
                 await this.initializeOllama();
-            } else if (this.config.provider === 'openai') {
+            } else if (provider === 'openai') {
                 await this.initializeOpenAI();
             } else {
-                throw new Error(`Unsupported embedding provider: ${this.config.provider}`);
+                throw new Error(`Unsupported embedding provider: ${provider} (original: ${this.config.provider})`);
             }
             
             this.isInitialized = true;

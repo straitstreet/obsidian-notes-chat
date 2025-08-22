@@ -139,6 +139,8 @@ export default class ChatWithNotesPlugin extends Plugin {
         if (this.settings.enableKnowledgeGraph) {
             const initNotice = new Notice('Initializing knowledge graph...', 0); // Persistent notice
             
+            console.log('Creating embedding manager with config:', this.settings.embedding);
+            
             this.embeddingManager = new EmbeddingManager({
                 ...this.settings.embedding,
                 enabled: true
