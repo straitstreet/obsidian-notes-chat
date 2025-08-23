@@ -101,8 +101,10 @@ export class LLMProviderManager {
             this.providers.set('anthropic', {
                 name: 'Anthropic',
                 models: this.config.anthropic.models || [
-                    'claude-3-5-sonnet-latest',
-                    'claude-3-5-haiku-20241022'
+                    'claude-3-5-sonnet-20240620',
+                    'claude-3-opus-20240229',
+                    'claude-3-sonnet-20240229',
+                    'claude-3-haiku-20240307'
                 ],
                 isLocal: false,
                 supportsStreaming: true,

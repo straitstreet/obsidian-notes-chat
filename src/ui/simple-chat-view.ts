@@ -53,6 +53,7 @@ export class ChatView extends ItemView {
             this.knowledgeAgent = new KnowledgeAgent(
                 this.llmManager,
                 knowledgeGraph,
+                this.app, // Add app instance for vault context
                 {
                     provider,
                     model,
@@ -135,7 +136,7 @@ export class ChatView extends ItemView {
         
         // Prefer fast, cheap models for search-style interface
         if (providers.includes('anthropic')) {
-            return { provider: 'anthropic', model: 'claude-3-5-haiku-20241022' };
+            return { provider: 'anthropic', model: 'claude-3-haiku-20240307' };
         }
         if (providers.includes('openai')) {
             return { provider: 'openai', model: 'gpt-4o-mini' };

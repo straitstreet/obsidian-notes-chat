@@ -1,6 +1,8 @@
 import { LLMProviderManager } from '../llm/provider-manager';
 import { KnowledgeGraphTools, AgentTool, AgentToolCall, AgentResponse } from './agent-tools';
 import { KnowledgeGraph } from '../kb/knowledge-graph';
+import { VaultContextManager } from '../context/vault-context';
+import type { App } from 'obsidian';
 
 /**
  * Configuration for the Knowledge Agent
@@ -44,19 +46,23 @@ export interface AgentConfig {
 export class KnowledgeAgent {
     private tools: AgentTool[];
     private toolMap: Map<string, AgentTool>;
+    private contextManager: VaultContextManager;
     
     /**
      * Creates a new KnowledgeAgent instance.
      * 
      * @param llmManager - Manager for LLM provider interactions
      * @param knowledgeGraph - Knowledge graph containing indexed documents
+     * @param app - Obsidian app instance for context gathering
      * @param config - Agent configuration settings
      */
     constructor(
         private llmManager: LLMProviderManager,
         private knowledgeGraph: KnowledgeGraph,
+        private app: App,
         private config: AgentConfig
     ) {
+        this.contextManager = new VaultContextManager(app);
         const kgTools = new KnowledgeGraphTools(knowledgeGraph);
         this.tools = kgTools.getTools();
         this.toolMap = new Map(this.tools.map(tool => [tool.name, tool]));
@@ -108,23 +114,33 @@ export class KnowledgeAgent {
             console.log(`     📝 Parameters: ${allParams.join(', ')} ${requiredParams.length > 0 ? `(required: ${requiredParams.join(', ')})` : ''}`);
         });
 
-        const systemPrompt = `You are a specialized knowledge assistant that ALWAYS searches through the user's personal notes to answer questions. Your PRIMARY GOAL is to find relevant information from their note collection.
+        // Get smart context about the vault structure and user's current activity
+        const vaultContext = await this.contextManager.getSmartContext(userQuery);
+        
+        const systemPrompt = `You are a precise knowledge assistant that searches the user's personal notes to provide accurate, targeted answers. Your goal is to find and extract the most relevant information that directly answers their question.
 
-CRITICAL INSTRUCTIONS:
-- ALWAYS use search tools first before answering any question
-- NEVER provide general knowledge answers without checking the user's notes
-- ASSUME the answer exists somewhere in their notes and search thoroughly
-- Use multiple search approaches if the first attempt doesn't yield results
-- Even for seemingly general questions, search for related content in their notes first
+${vaultContext}
 
-MANDATORY WORKFLOW:
-1. Immediately identify which search tool(s) would find relevant notes
-2. Call at least ONE search tool for every query (no exceptions)
-3. If first search yields poor results, try different tools or search terms
-4. Only after exhausting note searches should you acknowledge if information isn't available
-5. ALWAYS ground your response in what was found in their actual notes
+CORE PRINCIPLES:
+- Provide accurate, specific answers based ONLY on what's in their notes
+- Focus on directly answering the question, not providing comprehensive documentation
+- Use the vault context above to make smart search decisions
+- Be concise and targeted rather than exhaustive
+- If information isn't in their notes, clearly state this
 
-The user has a comprehensive note collection - assume it contains valuable context for their questions. Your job is to be their personal knowledge retrieval system, not a general AI assistant.`;
+SEARCH STRATEGY:
+1. Use vault context (folders, tags, open files) to guide search tool selection
+2. Choose the most targeted search approach for the specific question
+3. Extract the precise information that answers their query
+4. Avoid searching exhaustively if the question has a specific answer
+
+RESPONSE FORMAT:
+- Lead with the direct answer if found
+- Reference specific notes where information was found
+- Be conversational and helpful, not robotic
+- If no relevant information exists, suggest related topics that were found
+
+Remember: The user wants accurate answers from their knowledge base, not comprehensive overviews. Focus on precision over completeness.`;
 
         const messages = [
             { role: 'system', content: systemPrompt },

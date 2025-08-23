@@ -272,6 +272,11 @@ obsidian-notes-chat/
 ├── src/
 │   ├── llm/                    # Multi-provider LLM management
 │   │   └── provider-manager.ts # Unified LLM interface
+│   ├── agent/                  # AI agent system
+│   │   ├── knowledge-agent.ts  # Intelligent search orchestration
+│   │   └── agent-tools.ts      # 8 specialized search tools
+│   ├── context/                # Vault context management
+│   │   └── vault-context.ts    # Structure & activity awareness
 │   ├── budget/                 # Budget tracking system
 │   │   ├── budget-manager.ts   # Cost tracking and limits
 │   │   └── budget-notifications.ts # Spending alerts
@@ -279,13 +284,55 @@ obsidian-notes-chat/
 │   │   ├── embeddings.ts       # Local embedding generation
 │   │   └── knowledge-graph.ts  # Semantic indexing & search
 │   └── ui/                     # User interface components
-│       ├── chat-view.ts        # Main chat interface
-│       └── hotkey-manager.ts   # Hotkey-driven modals
+│       └── simple-chat-view.ts # Clean search-style interface
 ├── tests/                      # Comprehensive test suite
 │   ├── unit/                   # Component tests
 │   └── integration/            # System tests
 └── scripts/                    # Build and deployment tools
 ```
+
+## 🏗️ Technical Architecture
+
+### 🧠 **AI Agent System**
+**`KnowledgeAgent`** - Intelligent search orchestration using LLMs to determine which search tools to use and how to combine results.
+
+- **8 Specialized Tools**: semantic_search, text_search, recent_notes, date_search, pattern_matching, tag_search, link_analysis, note_details
+- **Smart Fallback**: When semantic search fails, AI generates improved text search queries
+- **Context-Aware**: Uses vault structure, open files, and user activity to guide search strategy
+- **Tool Chaining**: Can execute multiple search tools and synthesize results
+
+### 📊 **Vault Context Management** 
+**`VaultContextManager`** - Provides structural awareness like modern coding assistants.
+
+- **Folder Structure**: Maps vault organization and file counts
+- **Active Context**: Tracks currently open files and active note
+- **Tag Analysis**: Extracts and prioritizes common tags
+- **Smart Summaries**: Token-limited context that guides LLM decisions
+- **Search Hints**: Suggests relevant folders/tags based on query
+
+### 🔍 **Knowledge Graph & Search**
+**`KnowledgeGraph`** - Semantic indexing with intelligent fallbacks.
+
+- **Dual-Mode Search**: Semantic (embeddings) + intelligent text search
+- **Local Embeddings**: Ollama-based embedding generation (nomic-embed-text)
+- **Real-Time Indexing**: Hourly incremental updates with change detection
+- **8-Tool Integration**: Powers the specialized agent tools
+
+### 🎨 **Clean Interface Design**
+**`ChatView`** - Search-bar style interface focused on quick answers.
+
+- **Search-Style UX**: Single input → direct answer (no chat history)
+- **Auto-Model Selection**: Picks best available (Claude Haiku → GPT-4o-mini → Ollama)
+- **Clickable References**: Direct links to source notes
+- **Smart Suggestions**: Helpful guidance when no results found
+
+### 🔄 **Query Flow**
+1. **Context Gathering**: VaultContextManager provides structural awareness
+2. **Agent Planning**: KnowledgeAgent uses context to select search tools
+3. **Tool Execution**: Specialized tools search different note dimensions
+4. **Smart Fallback**: AI generates better text queries when semantic search fails
+5. **Result Synthesis**: Agent combines findings into targeted answers
+6. **Reference Linking**: UI shows clickable links to source notes
 
 ## 🤝 Contributing
 

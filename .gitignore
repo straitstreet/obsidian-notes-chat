@@ -12,7 +12,7 @@ pids
 *.pid.lock
 
 # Coverage directory used by tools like istanbul
-coverage
+coverage/
 *.lcov
 
 # Dependency directories
@@ -53,8 +53,10 @@ main.js.map
 # TypeScript
 *.tsbuildinfo
 
-# Documentation cache
-docs/obsidian-docs/
+# Generated directories
+docs/
+releases/
+screenshots/
 
 # OS generated files
 .DS_Store

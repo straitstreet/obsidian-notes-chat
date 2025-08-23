@@ -42,9 +42,10 @@ const DEFAULT_SETTINGS: ChatWithNotesSettings = {
         modelName: 'nomic-embed-text', // High-quality embedding model optimized for Ollama
         batchSize: 5, // Reasonable batch size for Ollama
         maxTokens: 512, // Good context length for embeddings
-        enabled: true, // Enable Ollama-based embeddings
-        provider: 'ollama' as const,
-        baseUrl: 'http://localhost:11434'
+        enabled: false, // Start disabled - user must enable manually
+        provider: 'ollama' as const, // Default to Ollama (more reliable than local transformers)
+        baseUrl: 'http://localhost:11434',
+        localModel: 'Xenova/all-MiniLM-L6-v2' // Small, popular embedding model
     },
     knowledgeGraph: {
         enabled: true, // Enable by default for better experience
@@ -57,7 +58,7 @@ const DEFAULT_SETTINGS: ChatWithNotesSettings = {
         maxDocuments: 1000
     },
     enableBudgetTracking: false, // Simple toggle
-    enableKnowledgeGraph: true   // Enable by default for better experience
+    enableKnowledgeGraph: false   // Start disabled - requires embeddings
 };
 
 export default class ChatWithNotesPlugin extends Plugin {
@@ -75,8 +76,25 @@ export default class ChatWithNotesPlugin extends Plugin {
 
         await this.loadSettings();
 
-        // Initialize managers
-        await this.initializeManagers();
+        // Add ribbon icon early to ensure it appears even if initialization fails
+        this.addRibbonIcon('bot', 'Chat with Notes', () => {
+            this.openChatView();
+        });
+
+        // Add single command to open chat
+        this.addCommand({
+            id: 'open-chat',
+            name: 'Open Chat with Notes',
+            callback: () => this.openChatView()
+        });
+
+        // Initialize managers with error handling
+        try {
+            await this.initializeManagers();
+        } catch (error) {
+            console.error('Failed to initialize managers:', error);
+            new Notice('Chat with Notes: Some features may be limited due to initialization errors');
+        }
 
         // Register view
         this.registerView(
@@ -88,24 +106,16 @@ export default class ChatWithNotesPlugin extends Plugin {
             )
         );
 
-        // Add single command to open chat
-        this.addCommand({
-            id: 'open-chat',
-            name: 'Open Chat with Notes',
-            callback: () => this.openChatView()
-        });
-
-        // Add ribbon icon
-        this.addRibbonIcon('message-circle', 'Chat with Notes', () => {
-            this.openChatView();
-        });
-
         // Add settings tab
         this.addSettingTab(new ChatWithNotesSettingTab(this.app, this));
 
         // Set up file watchers for knowledge graph (if enabled)
         if (this.settings.enableKnowledgeGraph) {
-            this.setupFileWatchers();
+            try {
+                this.setupFileWatchers();
+            } catch (error) {
+                console.error('Failed to set up file watchers:', error);
+            }
         }
 
         new Notice('Chat with Notes plugin loaded successfully!');
@@ -141,10 +151,19 @@ export default class ChatWithNotesPlugin extends Plugin {
             
             console.log('Creating embedding manager with config:', this.settings.embedding);
             
+            // Create progress callback for model downloads
+            const embeddingProgress = (progress: { loaded: number; total: number; status: string }) => {
+                const percent = progress.total > 0 ? Math.round((progress.loaded / progress.total) * 100) : 0;
+                if (progress.status === 'downloading') {
+                    initNotice.setMessage(`Downloading embedding model... ${percent}% (${Math.round(progress.loaded/1024/1024)}MB/${Math.round(progress.total/1024/1024)}MB)`);
+                } else if (progress.status === 'loading') {
+                    initNotice.setMessage(`Loading embedding model... ${percent}%`);
+                }
+            };
+            
             this.embeddingManager = new EmbeddingManager({
-                ...this.settings.embedding,
-                enabled: true
-            });
+                ...this.settings.embedding
+            }, embeddingProgress);
             
             try {
                 console.log('Starting knowledge graph initialization...');
@@ -406,10 +425,64 @@ class ChatWithNotesSettingTab extends PluginSettingTab {
         containerEl.createEl('h3', { text: 'Optional Features' });
 
         new Setting(containerEl)
+            .setName('Local Embeddings')
+            .setDesc('Enable AI-powered semantic search using a local model (~23MB download)')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.embedding.enabled)
+                .onChange(async (value) => {
+                    this.plugin.settings.embedding.enabled = value;
+                    await this.plugin.saveSettings();
+                    this.display(); // Refresh to show/hide related settings
+                }));
+
+        // Show model cache management if embeddings are enabled
+        if (this.plugin.settings.embedding.enabled && this.plugin.embeddingManager) {
+            const cacheInfo = this.plugin.embeddingManager.getCacheInfo();
+            const cacheDesc = cacheInfo.exists 
+                ? `Model cache exists (${(cacheInfo.size! / 1024 / 1024).toFixed(1)}MB). Delete to free up space.`
+                : 'No cached models found.';
+            
+            new Setting(containerEl)
+                .setName('Clear Model Cache')
+                .setDesc(cacheDesc)
+                .addButton(button => button
+                    .setButtonText(cacheInfo.exists ? 'Delete Cache' : 'No Cache')
+                    .setDisabled(!cacheInfo.exists)
+                    .onClick(async () => {
+                        if (!this.plugin.embeddingManager) return;
+                        
+                        button.setButtonText('Deleting...');
+                        button.disabled = true;
+                        
+                        try {
+                            const result = await this.plugin.embeddingManager.clearCache();
+                            
+                            if (result.success) {
+                                new Notice(result.message);
+                            } else {
+                                new Notice(`Failed to clear cache: ${result.message}`);
+                            }
+                            
+                            this.display(); // Refresh to update cache info
+                            
+                        } catch (error) {
+                            console.error('Cache deletion error:', error);
+                            new Notice('Failed to delete cache');
+                        } finally {
+                            button.setButtonText('Delete Cache');
+                            button.disabled = false;
+                        }
+                    }));
+        }
+
+        new Setting(containerEl)
             .setName('Knowledge Graph')
-            .setDesc('Enable semantic search across your notes using local AI embeddings')
+            .setDesc(this.plugin.settings.embedding.enabled ? 
+                'Enable semantic search across your notes' : 
+                'Requires local embeddings to be enabled first')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableKnowledgeGraph)
+                .setDisabled(!this.plugin.settings.embedding.enabled)
                 .onChange(async (value) => {
                     this.plugin.settings.enableKnowledgeGraph = value;
                     await this.plugin.saveSettings();
